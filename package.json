@@ -1,0 +1,12 @@
+{
+  "name": "mist",
+  "version": "1.0.0",
+  "description": "Mist AI — two assistants, one interface",
+  "main": "admin-server.js",
+  "scripts": {
+    "start": "node admin-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
