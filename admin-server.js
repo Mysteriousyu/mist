@@ -66,6 +66,7 @@ function blankData() {
   return {
     settings: { passHash: null, passSalt: null },
     providers: {
+      groq:       { label: 'Groq (⚡ FASTEST)',format: 'openai',    baseUrl: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '' },
       nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '' },
       openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '' },
       anthropic:  { label: 'Anthropic (Claude)',format: 'anthropic', baseUrl: '', apiKey: '' },
@@ -81,12 +82,13 @@ function blankData() {
       replicate:  { label: 'Replicate (images/video)', format: 'replicate', baseUrl: 'https://api.replicate.com/v1/predictions', apiKey: '' }
     },
     routing: {
-      mist1: { provider: 'nim', model: 'google/gemma-4-31b-it', fallbacks: [] },
+      mist1: { provider: 'groq', model: 'llama-3.3-70b-versatile', fallbacks: [{ provider: 'nim', model: 'google/gemma-4-31b-it' }] },
       /* Mist 2 has two chains:
          - codingChain: used for plain text / coding (up to 6 keys)
          - multimodalChain: used when the user sends media or a URL  */
       mist2: {
         codingChain: [
+          { provider: 'anthropic', model: 'claude-opus-4-6' },
           { provider: 'nim',  model: 'google/gemma-4-31b-it' },
           { provider: 'qwen', model: 'qwen3.8-max' },
           { provider: 'xai',  model: 'grok-4.5' }
