@@ -755,6 +755,8 @@ async function handleGenerate(req, res) {
       const buf = Buffer.from(await r.arrayBuffer());
       return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'stability' });
     } catch (e) { return send(res, 502, { error: 'Stability request failed: ' + e.message }); }
+  }
+
   if (repKey) {
     try {
       const start = await fetch('https://api.replicate.com/v1/predictions', {
