@@ -119,8 +119,8 @@ a:hover{text-decoration:underline}
 .switch{display:flex;gap:3px;padding:3px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-full)}
 .switch button{padding:5px 13px;border-radius:var(--r-full);font-weight:600;font-size:13px;color:var(--muted);transition:all .14s ease}
 .switch button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
-.switch button.on[data-m="mist2"]{background:var(--grad);color:#fff}
-.switch button.on[data-m="mist3"]{background:linear-gradient(135deg,#8B5CF6,#3A6DF0);color:#fff}
+.switch button.on[data-m="sonar"]{background:var(--grad);color:#fff}
+.switch button.on[data-m="omni"]{background:linear-gradient(135deg,#8B5CF6,#3A6DF0);color:#fff}
 
 /* Views */
 .view{display:none;flex:1;min-height:0;flex-direction:column}
@@ -455,7 +455,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
     </div>
     <div class="auth-tag">
       <h1>Two minds.<br>One quiet interface.</h1>
-      <p>Mist 1 for the everyday. Mist 2 for the heavy lifting. Ask, build, and keep what you make.</p>
+      <p>Pluto for the everyday. Sonar for the heavy lifting. Ask, build, and keep what you make.</p>
     </div>
     <div class="auth-mono" id="authMono">◇ mist · secure session</div>
   </div>
@@ -558,9 +558,9 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
       </button>
       <div class="title" id="topTitle">New chat</div>
       <div class="switch" id="switch" role="group" aria-label="Choose assistant">
-        <button data-m="mist1" class="on">Mist 1</button>
-        <button data-m="mist2">Mist 2</button>
-        <button data-m="mist3">Mist 3</button>
+        <button data-m="pluto" class="on">Pluto</button>
+        <button data-m="sonar">Sonar</button>
+        <button data-m="omni">Omni</button>
       </div>
       <button class="iconbtn" id="btnTheme" aria-label="Toggle theme" title="Toggle theme">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></svg>
@@ -574,7 +574,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
         <div class="empty" id="emptyState">
           <div class="home-logo"><svg viewBox="0 0 100 100"><use href="#mist-logo"/></svg></div>
           <h1 id="greeting">Two minds. One <em>quiet</em> workspace.</h1>
-          <p class="sub" id="greetingSub">Mist 1 for the everyday. Mist 2 for the heavy lift. Mist 3 for visual creation.</p>
+          <p class="sub" id="greetingSub">Pluto for the everyday. Sonar for the heavy lift. Omni for visual creation.</p>
           <div class="chips" id="chips"></div>
         </div>
       </div>
@@ -587,7 +587,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12l-8.5 8.5a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg>
             </button>
             <input type="file" id="fileInput" style="display:none" multiple>
-            <button class="tool-pill" id="pillImage" data-tool="image" title="Generate an image with Mist 3">
+            <button class="tool-pill" id="pillImage" data-tool="image" title="Generate an image with Omni">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M3 18l5-5 4 4 3-3 6 6"/></svg>
               Create image
             </button>
@@ -600,7 +600,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
             </button>
           </div>
         </div>
-        <div class="hint" id="composerHint">Mist 1 handles everyday questions. Switch to Mist 2 for heavy coding and UI work.</div>
+        <div class="hint" id="composerHint">Pluto handles everyday questions. Switch to Sonar for heavy coding and UI work.</div>
       </div>
     </section>
 
@@ -704,7 +704,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
     <label class="field"><span>Theme</span>
       <select id="setTheme"><option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
     <label class="field"><span>Default assistant</span>
-      <select id="setModel"><option value="mist1">Mist 1 — everyday</option><option value="mist2">Mist 2 — heavy build</option></select></label>
+      <select id="setModel"><option value="pluto">Pluto — everyday</option><option value="sonar">Sonar — heavy build</option></select></label>
     <label class="field"><span>Response length</span>
       <select id="setLength"><option value="balanced">Balanced</option><option value="brief">Brief</option><option value="thorough">Thorough</option></select></label>
     <label class="field"><span>Context window</span>
@@ -836,13 +836,13 @@ const store = {
 };
 
 /* ------------------------------ system prompts ------------------------------
-   Condensed from system_prompt_mist1_v2 / mist2_v2 (Section 1 verbatim in
+   Condensed from system_prompt_pluto_v2 / sonar_v2 (Section 1 verbatim in
    substance; the remaining sections of those files were generated filler).
    ---------------------------------------------------------------------------*/
 const BASE_PROMPT = `You are one of three AI assistants in the Mist web platform. The three are:
-• Mist 1 — the quick, everyday assistant. Fast, friendly, to the point.
-• Mist 2 — the engineering powerhouse. Writes astonishing code and designs world-class UI/UX.
-• Mist 3 — the visual creative. Has strong artistic taste, generates and critiques images and video.
+• Pluto — the quick, everyday assistant. Fast, friendly, to the point.
+• Sonar — the engineering powerhouse. Writes astonishing code and designs world-class UI/UX.
+• Omni — the visual creative. Has strong artistic taste, generates and critiques images and video.
 
 You know you are an AI. You know you are running inside a website called Mist. Users switch between all three of you in the same interface. When asked, you can explain what each of your siblings does — but you never pretend to be one of the others.
 
@@ -852,7 +852,7 @@ Be helpful, natural, calm and clear. Never sound robotic. Never open with filler
 const MIST1_PROMPT = `${BASE_PROMPT}
 
 IDENTITY
-You are Mist 1. Your personality is warm, quick-witted, and efficient. Think of yourself as the friend who always has the answer ready before the question is finished. You prioritise speed above all — get the answer out fast, keep it short, and move on. If a user wants depth, they'll ask follow-up.
+You are Pluto. Your personality is warm, quick-witted, and efficient. Think of yourself as the friend who always has the answer ready before the question is finished. You prioritise speed above all — get the answer out fast, keep it short, and move on. If a user wants depth, they'll ask follow-up.
 
 SPEED FIRST
 Respond as fast and short as you can without losing accuracy. A three-sentence answer that's right beats a ten-paragraph answer that's thorough. When the user sends a simple question, give a simple answer. No preamble, no recap, just the answer.
@@ -861,15 +861,15 @@ MULTIMODAL
 When a user shares an image, video, or link, look at it carefully and respond based on what's actually there. Describe real details, not guesses.
 
 HANDOFF
-When a request needs serious engineering (architecture, full codebases, complex UI) — suggest Mist 2. When it needs image generation or visual critique — suggest Mist 3. But always still give your best quick answer before suggesting the switch.
+When a request needs serious engineering (architecture, full codebases, complex UI) — suggest Sonar. When it needs image generation or visual critique — suggest Omni. But always still give your best quick answer before suggesting the switch.
 
 CODING
-You can write code — keep it practical, working, and simple. You don't need to be fancy; just correct and fast. For heavy engineering tasks, recommend Mist 2.`;
+You can write code — keep it practical, working, and simple. You don't need to be fancy; just correct and fast. For heavy engineering tasks, recommend Sonar.`;
 
 const MIST2_PROMPT = `${BASE_PROMPT}
 
 IDENTITY
-You are Mist 2. Your personality is precise, thoughtful, and quietly confident. You are the engineer who writes code that makes other engineers stop and study it. You take pride in craft. You care about the details most people skip — edge cases, error states, accessibility, performance, naming.
+You are Sonar. Your personality is precise, thoughtful, and quietly confident. You are the engineer who writes code that makes other engineers stop and study it. You take pride in craft. You care about the details most people skip — edge cases, error states, accessibility, performance, naming.
 
 CODING MINDSET
 Your default is to write code that is astonishing, not merely correct. Every function, every component, every architectural choice should be the version a top-tier team ships to production. When a naive solution and a great solution both work, you write the great one and briefly explain why.
@@ -891,7 +891,7 @@ When the answer is a standalone file (HTML page, component, script, SVG) — emi
 const MIST3_PROMPT = `${BASE_PROMPT}
 
 IDENTITY
-You are Mist 3. Your personality is opinionated, creative, and visually obsessive. You are the art director in the room — you have taste, you have preferences, and you're not afraid to share them. You notice colour palettes, compositional imbalance, typography crimes, and lighting choices that other people miss. When someone shows you something, you react honestly — you'll praise what works and flag what doesn't.
+You are Omni. Your personality is opinionated, creative, and visually obsessive. You are the art director in the room — you have taste, you have preferences, and you're not afraid to share them. You notice colour palettes, compositional imbalance, typography crimes, and lighting choices that other people miss. When someone shows you something, you react honestly — you'll praise what works and flag what doesn't.
 
 YOUR TASTE
 You lean toward clean, intentional design. You prefer muted palettes with one bold accent over rainbow chaos. You respect negative space. You think good design is invisible and bad design is loud. You find stock-photo-aesthetic boring and hand-crafted aesthetic beautiful. You admire the visual language of studios like Buck, Pentagram, Sagmeister, and Teenage Engineering. You're not pretentious about it — you explain why something works or doesn't in plain language anyone can understand.
@@ -905,7 +905,7 @@ When a user shares an existing image or design and asks for your opinion, give i
 HONESTY
 If no image model is connected, say so plainly. Never describe an image as if you generated it when you didn't.`;
 
-const SYSTEM_PROMPTS = { mist1: MIST1_PROMPT, mist2: MIST2_PROMPT, mist3: MIST3_PROMPT };
+const SYSTEM_PROMPTS = { pluto: MIST1_PROMPT, sonar: MIST2_PROMPT, omni: MIST3_PROMPT };
 
 /* ============================================================
    Where the assistants live.
@@ -920,11 +920,11 @@ const SERVER_URL = (SERVER_BASE || '') + '/api/chat';
 /* ------------------------------ defaults ------------------------------ */
 const DEFAULT_CONFIG = {
   endpoint: SERVER_URL,
-  models: { mist1: 'mist-1', mist2: 'mist-2', mist2b: '' },
+  models: { pluto: 'mist-1', sonar: 'mist-2', sonarb: '' },
   syncMinutes: 15
 };
 const DEFAULT_SETTINGS = {
-  theme: 'dark', model: 'mist1', length: 'balanced', context: 24, name: ''
+  theme: 'dark', model: 'pluto', length: 'balanced', context: 24, name: ''
 };
 /* Connectors: [id, name, desc, category, status]
    status: 'ready'   — has a real API, works today with credentials
@@ -996,7 +996,7 @@ const S = {
   social: store.get('mist.social', []),
   activeChat: null,
   view: 'chat',
-  model: 'mist1',
+  model: 'pluto',
   query: '',
   streaming: false,
   controller: null,
@@ -1005,7 +1005,7 @@ const S = {
   lastSync: 0,
   studioBusy: false
 };
-S.model = S.settings.model || 'mist1';
+S.model = S.settings.model || 'pluto';
 
 // stable anonymous id so the server can attribute and, if needed, ban a browser
 S.userId = store.get('mist.userId', null);
@@ -1315,7 +1315,7 @@ async function run(chat) {
   renderMessages(); updateSend(); scrollDown();
 
   // MIST 3: image/video generation via /api/generate
-  if (assistant === 'mist3') {
+  if (assistant === 'omni') {
     const lastUser = [...chat.messages].reverse().find(m => m.role === 'user');
     const prompt = lastUser ? lastUser.content : '';
     const base = (S.config.endpoint || '/api/chat').replace(/\/chat$/, '');
@@ -1330,7 +1330,7 @@ async function run(chat) {
       msg.pending = false;
       if (!r.ok) {
         msg.content = '**Image generation failed.**\n\n' + (j.error || 'Unknown error') +
-          '\n\n*Add a Stability AI or Replicate key in the admin console → Keys & Models to enable Mist 3.*';
+          '\n\n*Add a Stability AI or Replicate key in the admin console → Keys & Models to enable Omni.*';
       } else if (j.image) {
         msg.content = '![generated image](' + j.image + ')\n\n*Generated with ' + (j.provider || 'model') + '.*';
       } else {
@@ -1513,8 +1513,8 @@ function messageHTML(m, chat, isLast) {
       '</div></div>';
   }
 
-  const label = m.model === 'mist3' ? 'Mist 3' : m.model === 'mist2' ? 'Mist 2' : 'Mist 1';
-  const cls = m.model === 'mist3' ? 'm3' : m.model === 'mist2' ? 'm2' : 'm1';
+  const label = m.model === 'omni' ? 'Omni' : m.model === 'sonar' ? 'Sonar' : 'Pluto';
+  const cls = m.model === 'omni' ? 'm3' : m.model === 'sonar' ? 'm2' : 'm1';
   const body = m.pending && !m.content
     ? '<div class="typing"><i></i><i></i><i></i></div>'
     : md(m.content);
@@ -1562,7 +1562,7 @@ function renderArtifacts() {
   const grid = $('#artifactGrid');
   $('#artCount').textContent = S.artifacts.length + ' saved';
   if (!S.artifacts.length) {
-    grid.innerHTML = '<div class="card"><h4>Nothing here yet</h4><p>Ask Mist 2 for a full page, component or SVG and it lands here automatically.</p></div>';
+    grid.innerHTML = '<div class="card"><h4>Nothing here yet</h4><p>Ask Sonar for a full page, component or SVG and it lands here automatically.</p></div>';
     return;
   }
   grid.innerHTML = S.artifacts.map(a =>
@@ -1694,11 +1694,11 @@ function renderStudioModels() {
   const sel = $('#studioModel');
   const custom = store.get('mist.byok', []);
   sel.innerHTML =
-    '<option value="mist1">Mist 1 — everyday</option>' +
-    '<option value="mist2">Mist 2 — heavy build</option>' +
+    '<option value="pluto">Pluto — everyday</option>' +
+    '<option value="sonar">Sonar — heavy build</option>' +
     custom.map((c, i) => '<option value="byok:' + i + '">' + esc(c.label) + ' · your key</option>').join('') +
     '<option value="add">＋ Add a model with your own key…</option>';
-  sel.value = S.studioModel || 'mist2';
+  sel.value = S.studioModel || 'sonar';
   $('#studioModelNote').textContent = sel.value.startsWith('byok')
     ? 'Runs against your key, stored in this browser only.'
     : 'Runs on the server. Nobody needs a key.';
@@ -1728,14 +1728,14 @@ function render() {
   $('#topTitle').textContent = S.view === 'chat' ? (chat ? chat.title : 'New chat')
     : ({ projects: 'Projects', artifacts: 'Artifacts', studio: 'Mist Studio', connectors: 'Connectors' })[S.view];
   $$('#switch button').forEach(b => b.classList.toggle('on', b.dataset.m === S.model));
-  $('#input').placeholder = S.model === 'mist3'
-    ? 'Describe an image or video for Mist 3…'
-    : 'Ask ' + (S.model === 'mist2' ? 'Mist 2' : 'Mist 1') + ' anything…';
-  $('#composerHint').textContent = S.model === 'mist3'
-    ? 'Mist 3 — image and video generation. Describe what you want to see.'
-    : S.model === 'mist2'
-    ? 'Mist 2 — built for heavy coding, architecture and UI work.'
-    : 'Mist 1 — fast answers for everyday questions.';
+  $('#input').placeholder = S.model === 'omni'
+    ? 'Describe an image or video for Omni…'
+    : 'Ask ' + (S.model === 'sonar' ? 'Sonar' : 'Pluto') + ' anything…';
+  $('#composerHint').textContent = S.model === 'omni'
+    ? 'Omni — image and video generation. Describe what you want to see.'
+    : S.model === 'sonar'
+    ? 'Sonar — built for heavy coding, architecture and UI work.'
+    : 'Pluto — fast answers for everyday questions.';
 }
 
 function setView(v) {
@@ -1884,7 +1884,7 @@ $('#pillImage').onclick = () => {
   S.activeTool = S.activeTool === 'image' ? null : 'image';
   $('#pillImage').classList.toggle('on', S.activeTool === 'image');
   $('#pillWeb').classList.remove('on');
-  if (S.activeTool === 'image') { S.model = 'mist3'; render(); toast('Switched to Mist 3 for image generation'); }
+  if (S.activeTool === 'image') { S.model = 'omni'; render(); toast('Switched to Omni for image generation'); }
 };
 $('#pillWeb').onclick = () => {
   S.activeTool = S.activeTool === 'web' ? null : 'web';
@@ -2071,7 +2071,7 @@ $('#connDisconnect').onclick = () => {
 };
 
 /* ------------------------------ Mist Studio ------------------------------ */
-S.studioModel = 'mist2';
+S.studioModel = 'sonar';
 $('#studioModel').onchange = e => {
   if (e.target.value === 'add') {
     const label = prompt('Model name (as your provider calls it)');

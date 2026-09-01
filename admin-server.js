@@ -77,16 +77,27 @@ function blankData() {
       kimi:       { label: 'Kimi (Moonshot)',  format: 'openai',    baseUrl: 'https://api.moonshot.ai/v1/chat/completions', apiKey: '' },
       perplexity: { label: 'Perplexity',       format: 'openai',    baseUrl: 'https://api.perplexity.ai/chat/completions', apiKey: '' },
       qwen:       { label: 'Qwen (Alibaba)',   format: 'openai',    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', apiKey: '' },
-      /* Image/video providers for Mist 3 */
+      /* New providers */
+      huggingface:{ label: 'Hugging Face',     format: 'openai',    baseUrl: 'https://api-inference.huggingface.co/v1/chat/completions', apiKey: '' },
+      together:   { label: 'Together AI',      format: 'openai',    baseUrl: 'https://api.together.xyz/v1/chat/completions', apiKey: '' },
+      fireworks:  { label: 'Fireworks AI',     format: 'openai',    baseUrl: 'https://api.fireworks.ai/inference/v1/chat/completions', apiKey: '' },
+      openrouter: { label: 'OpenRouter',       format: 'openai',    baseUrl: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '' },
+      cohere:     { label: 'Cohere',           format: 'openai',    baseUrl: 'https://api.cohere.com/v2/chat', apiKey: '' },
+      sambanova:  { label: 'SambaNova',        format: 'openai',    baseUrl: 'https://api.sambanova.ai/v1/chat/completions', apiKey: '' },
+      cerebras:   { label: 'Cerebras (⚡ FAST)',format: 'openai',    baseUrl: 'https://api.cerebras.ai/v1/chat/completions', apiKey: '', 
+                    models: ['llama-3.1-70b', 'llama-3.1-8b', 'llama-2-70b-chat'] },
+      lepton:     { label: 'Lepton AI',        format: 'openai',    baseUrl: 'https://llama3-2-3b.lepton.run/api/v1/chat/completions', apiKey: '' },
+      ai21:       { label: 'AI21 (Jamba)',     format: 'openai',    baseUrl: 'https://api.ai21.com/studio/v1/chat/completions', apiKey: '' },
+      /* Image/video providers for Omni */
       stability:  { label: 'Stability AI (images)', format: 'stability', baseUrl: 'https://api.stability.ai/v2beta/stable-image/generate/core', apiKey: '' },
       replicate:  { label: 'Replicate (images/video)', format: 'replicate', baseUrl: 'https://api.replicate.com/v1/predictions', apiKey: '' }
     },
     routing: {
-      mist1: { provider: 'groq', model: 'llama-3.3-70b-versatile', fallbacks: [{ provider: 'nim', model: 'google/gemma-4-31b-it' }] },
+      pluto: { provider: 'groq', model: 'llama-3.3-70b-versatile', fallbacks: [{ provider: 'nim', model: 'google/gemma-4-31b-it' }] },
       /* Mist 2 has two chains:
          - codingChain: used for plain text / coding (up to 6 keys)
          - multimodalChain: used when the user sends media or a URL  */
-      mist2: {
+      sonar: {
         codingChain: [
           { provider: 'anthropic', model: 'claude-opus-4-6' },
           { provider: 'nim',  model: 'google/gemma-4-31b-it' },
@@ -100,14 +111,14 @@ function blankData() {
       },
       /* Mist 3 is a chat model that crafts prompts. The actual image generation
          happens via /api/generate route, using stability/replicate. */
-      mist3: { provider: 'gemini', model: 'gemini-2.0-flash', fallbacks: [
+      omni: { provider: 'gemini', model: 'gemini-2.0-flash', fallbacks: [
         { provider: 'nim', model: 'google/gemma-4-31b-it' }
       ] }
     },
     /* Custom system prompts — leave blank to use built-in prompts */
-    systemPrompts: { mist1: '', mist2: '', mist3: '', stella: '' },
-    /* Which assistant Stella uses (mist1/mist2/mist3). Falls back to mist2. */
-    stellaAssistant: 'mist2',
+    systemPrompts: { pluto: '', sonar: '', omni: '', stella: '' },
+    /* Which assistant Stella uses (pluto/sonar/omni). Falls back to sonar. */
+    stellaAssistant: 'sonar',
     /* Workspaces — allow multiple users on one account */
     workspaces: {},   // { workspaceId: { name, ownerId, memberIds:[], inviteToken } }
     /* Connect tokens — for the CLI bridge to control a machine */
@@ -282,7 +293,7 @@ function resolveTargets(assistant, messages) {
   if (!route) return [];
 
   let chain;
-  if (assistant === 'mist2') {
+  if (assistant === 'sonar') {
     const useMultimodal = isMultimodal(messages || []);
     chain = useMultimodal
       ? (route.multimodalChain || [])
@@ -346,7 +357,7 @@ async function handleChat(req, res) {
   }
   user.messages++;
 
-  const assistant = ['mist1','mist2','mist3'].includes(body.assistant) ? body.assistant : 'mist1';
+  const assistant = ['pluto','sonar','omni'].includes(body.assistant) ? body.assistant : 'pluto';
   const messages = body.messages.slice(-24);
   const targets = resolveTargets(assistant, messages);
   if (!targets.length) return send(res, 503, { error: 'No API key configured for ' + assistant + '. Set one in the admin console → Keys & Models.' });
@@ -458,8 +469,8 @@ async function handleAdminApi(req, res, urlPath) {
     }
     return send(res, 200, {
       providers, routing: DB.routing,
-      systemPrompts: DB.systemPrompts || { mist1: '', mist2: '', mist3: '', stella: '' },
-      stellaAssistant: DB.stellaAssistant || 'mist2',
+      systemPrompts: DB.systemPrompts || { pluto: '', sonar: '', omni: '', stella: '' },
+      stellaAssistant: DB.stellaAssistant || 'sonar',
       users: Object.values(DB.users).sort((a, b) => b.lastSeen - a.lastSeen),
       chats: Object.values(DB.chats).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 500),
       projects: Object.values(DB.projects).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
@@ -501,7 +512,7 @@ async function handleAdminApi(req, res, urlPath) {
   }
   if (urlPath === '/admin/stella' && req.method === 'POST') {
     const b = await readJson(req);
-    if (b && ['mist1','mist2','mist3'].includes(b.assistant)) {
+    if (b && ['pluto','sonar','omni'].includes(b.assistant)) {
       DB.stellaAssistant = b.assistant; save();
     }
     return send(res, 200, { ok: true });
@@ -870,7 +881,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'OPTIONS') { cors(res); return send(res, 204, ''); }
   if (urlPath === '/api/health') { cors(res); return send(res, 200, { ok: true }); }
-  if (urlPath === '/api/stella-config') { cors(res); return send(res, 200, { assistant: DB.stellaAssistant || 'mist2' }); }
+  if (urlPath === '/api/stella-config') { cors(res); return send(res, 200, { assistant: DB.stellaAssistant || 'sonar' }); }
   if (urlPath === '/api/chat' && req.method === 'POST') return handleChat(req, res);
   if (urlPath === '/api/sync' && req.method === 'POST') return handleSync(req, res);
   if (urlPath === '/api/generate' && req.method === 'POST') return handleGenerate(req, res);
@@ -1078,11 +1089,23 @@ function provOpts(sel){
   }).join('');
 }
 
+function modelOpts(providerId, sel){
+  var p=STATE.providers[providerId];
+  if(!p || !p.models || !Array.isArray(p.models)) return '';
+  return p.models.map(function(m){
+    return '<option value="'+esc(m)+'"'+(m===sel?' selected':'')+'>'+esc(m)+'</option>';
+  }).join('');
+}
+
 function chainRows(chainId, chain){
   return (chain||[]).map(function(f,i){
+    var p=STATE.providers[f.provider];
+    var modelInput = (p && p.models && Array.isArray(p.models))
+      ? '<select id="'+chainId+'-m-'+i+'">'+modelOpts(f.provider, f.model)+'</select>'
+      : '<input id="'+chainId+'-m-'+i+'" value="'+esc(f.model||'')+'" placeholder="model id">';
     return '<div class="row" style="margin-top:6px;align-items:center">'
       +'<div><select id="'+chainId+'-p-'+i+'">'+provOpts(f.provider)+'</select></div>'
-      +'<div><input id="'+chainId+'-m-'+i+'" value="'+esc(f.model||'')+'" placeholder="model id"></div>'
+      +'<div>'+modelInput+'</div>'
       +'<button class="btn sm danger" style="flex:none" data-rm-row="'+chainId+'" data-idx="'+i+'">x</button></div>';
   }).join('');
 }
@@ -1123,46 +1146,54 @@ function renderKeys(){
   /* ---- Step 2: Pick models for each AI ---- */
   html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">';
 
-  /* Mist 1 card */
-  var r1 = R.mist1 || {};
+  /* Pluto card */
+  var r1 = R.pluto || {};
+  var p1 = STATE.providers[r1.provider];
+  var m1ModelInput = (p1 && p1.models && Array.isArray(p1.models))
+    ? '<select id="m1-m">'+modelOpts(r1.provider, r1.model)+'</select>'
+    : '<input id="m1-m" value="'+esc(r1.model||'')+'" placeholder="e.g. gemini-2.0-flash">';
   html+='<div class="card" style="border-left:3px solid var(--brand)">'
-    +'<h3 style="margin:0 0 4px">Mist 1</h3>'
+    +'<h3 style="margin:0 0 4px">Pluto</h3>'
     +'<p class="muted" style="margin:0 0 12px">Quick everyday assistant. Responds fast.</p>'
     +'<label style="font-weight:600;font-size:12px">Provider</label>'
     +'<select id="m1-p" style="margin-bottom:8px">'+provOpts(r1.provider)+'</select>'
     +'<label style="font-weight:600;font-size:12px">Model ID</label>'
-    +'<input id="m1-m" value="'+esc(r1.model||'')+'" placeholder="e.g. gemini-2.0-flash">'
-    +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM1">Save Mist 1</button></div>';
+    +m1ModelInput
+    +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM1">Save Pluto</button></div>';
 
-  /* Mist 2 card */
-  var r2 = R.mist2 || {};
+  /* Sonar card */
+  var r2 = R.sonar || {};
   html+='<div class="card" style="border-left:3px solid #F26D5B">'
-    +'<h3 style="margin:0 0 4px">Mist 2</h3>'
+    +'<h3 style="margin:0 0 4px">Sonar</h3>'
     +'<p class="muted" style="margin:0 0 12px">Engineering powerhouse. Best code possible.</p>'
     +'<p class="muted" style="font-size:11.5px;margin:0 0 8px"><b>Coding chain</b> — for text/code (up to 6 models, tried in order):</p>'
     +'<div id="m2c-rows">'+chainRows('m2c',r2.codingChain)+'</div><button class="btn sm" data-add-row="m2c" style="margin:4px 0 10px">+ Add model</button>'
     +'<p class="muted" style="font-size:11.5px;margin:0 0 8px"><b>Multimodal chain</b> — when user sends images/videos/links:</p>'
     +'<div id="m2m-rows">'+chainRows('m2m',r2.multimodalChain)+'</div><button class="btn sm" data-add-row="m2m" style="margin:4px 0">+ Add model</button>'
-    +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM2">Save Mist 2</button></div>';
+    +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM2">Save Sonar</button></div>';
 
-  /* Mist 3 card */
-  var r3 = R.mist3 || {};
+  /* Omni card */
+  var r3 = R.omni || {};
+  var p3 = STATE.providers[r3.provider];
+  var m3ModelInput = (p3 && p3.models && Array.isArray(p3.models))
+    ? '<select id="m3-m">'+modelOpts(r3.provider, r3.model)+'</select>'
+    : '<input id="m3-m" value="'+esc(r3.model||'')+'" placeholder="e.g. gemini-2.0-flash" style="margin-bottom:10px">';
   html+='<div class="card" style="border-left:3px solid #8B5CF6">'
-    +'<h3 style="margin:0 0 4px">Mist 3</h3>'
+    +'<h3 style="margin:0 0 4px">Omni</h3>'
     +'<p class="muted" style="margin:0 0 12px">Visual creative. Images, video, critique.</p>'
     +'<label style="font-weight:600;font-size:12px">Chat model (crafts prompts)</label>'
     +'<select id="m3-p" style="margin-bottom:4px">'+provOpts(r3.provider)+'</select>'
-    +'<input id="m3-m" value="'+esc(r3.model||'')+'" placeholder="e.g. gemini-2.0-flash" style="margin-bottom:10px">'
+    +m3ModelInput
     +'<label style="font-weight:600;font-size:12px">Image provider (Stability or Replicate key above)</label>'
     +'<p class="muted" style="font-size:11.5px;margin:2px 0 0">'+(P.stability && P.stability.hasKey ? '<span class="badge ok">Stability ready</span>' : P.replicate && P.replicate.hasKey ? '<span class="badge ok">Replicate ready</span>' : '<span class="badge no">Add a Stability or Replicate key above</span>')+'</p>'
-    +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM3">Save Mist 3</button></div>';
+    +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM3">Save Omni</button></div>';
   html+='</div>';
 
   /* ---- Stella ---- */
-  var sa = STATE.stellaAssistant || 'mist2';
+  var sa = STATE.stellaAssistant || 'sonar';
   html+='<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Stella (Stellar browser AI)</h3>'
     +'<p class="muted">Which Mist AI powers Stella. She uses whatever model that AI is set to.</p>'
-    +'<select id="stella-a"><option value="mist1"'+(sa==='mist1'?' selected':'')+'>Mist 1</option><option value="mist2"'+(sa==='mist2'?' selected':'')+'>Mist 2</option><option value="mist3"'+(sa==='mist3'?' selected':'')+'>Mist 3</option></select>'
+    +'<select id="stella-a"><option value="pluto"'+(sa==='pluto'?' selected':'')+'>Pluto</option><option value="sonar"'+(sa==='sonar'?' selected':'')+'>Sonar</option><option value="omni"'+(sa==='omni'?' selected':'')+'>Omni</option></select>'
     +'<button class="btn grad" style="margin-top:10px" id="saveStella">Save Stella</button></div>';
 
   /* ---- Shared Google ---- */
@@ -1175,12 +1206,12 @@ function renderKeys(){
   html+='<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Custom personalities (optional)</h3>'
     +'<p class="muted">Override the built-in personality. Leave blank = use defaults (recommended).</p>'
     +'<details><summary style="cursor:pointer;font-weight:600;font-size:13px;color:var(--muted)">Show prompt editors</summary>'
-    +'<h4 style="margin:12px 0 6px">Mist 1</h4><textarea id="sp-mist1">'+esc(SP.mist1||'')+'</textarea>'
-    +'<div style="display:flex;gap:8px;margin-top:6px"><button class="btn sm grad" data-save-sp="mist1">Save</button><button class="btn sm danger" data-clear-sp="mist1">Reset</button></div>'
-    +'<h4 style="margin:12px 0 6px">Mist 2</h4><textarea id="sp-mist2">'+esc(SP.mist2||'')+'</textarea>'
-    +'<div style="display:flex;gap:8px;margin-top:6px"><button class="btn sm grad" data-save-sp="mist2">Save</button><button class="btn sm danger" data-clear-sp="mist2">Reset</button></div>'
-    +'<h4 style="margin:12px 0 6px">Mist 3</h4><textarea id="sp-mist3">'+esc(SP.mist3||'')+'</textarea>'
-    +'<div style="display:flex;gap:8px;margin-top:6px"><button class="btn sm grad" data-save-sp="mist3">Save</button><button class="btn sm danger" data-clear-sp="mist3">Reset</button></div>'
+    +'<h4 style="margin:12px 0 6px">Pluto</h4><textarea id="sp-pluto">'+esc(SP.pluto||'')+'</textarea>'
+    +'<div style="display:flex;gap:8px;margin-top:6px"><button class="btn sm grad" data-save-sp="pluto">Save</button><button class="btn sm danger" data-clear-sp="pluto">Reset</button></div>'
+    +'<h4 style="margin:12px 0 6px">Sonar</h4><textarea id="sp-sonar">'+esc(SP.sonar||'')+'</textarea>'
+    +'<div style="display:flex;gap:8px;margin-top:6px"><button class="btn sm grad" data-save-sp="sonar">Save</button><button class="btn sm danger" data-clear-sp="sonar">Reset</button></div>'
+    +'<h4 style="margin:12px 0 6px">Omni</h4><textarea id="sp-omni">'+esc(SP.omni||'')+'</textarea>'
+    +'<div style="display:flex;gap:8px;margin-top:6px"><button class="btn sm grad" data-save-sp="omni">Save</button><button class="btn sm danger" data-clear-sp="omni">Reset</button></div>'
     +'</details></div>';
 
   $('#pane-keys').innerHTML=html;
@@ -1256,13 +1287,13 @@ document.addEventListener('click',function(e){
   el=t.closest('[data-del-prov]');if(el){if(confirm('Remove?'))api('/provider/delete',{id:el.dataset.delProv}).then(function(){loadState();});return;}
   if(t.id==='addProvBtn'){var id=prompt('Provider id (e.g. groq, together)');if(id)api('/provider',{id:id.trim(),label:id,format:'openai',baseUrl:'',apiKey:''}).then(function(){loadState();});return;}
   /* mist 1 routing */
-  if(t.id==='saveM1'){api('/routing',{routing:{mist1:{provider:$('#m1-p').value,model:$('#m1-m').value.trim(),fallbacks:[]}}}).then(function(){toast('Mist 1 saved');loadState();});return;}
-  /* mist 2 routing */
-  if(t.id==='saveM2'){api('/routing',{routing:{mist2:{codingChain:collectChain('m2c'),multimodalChain:collectChain('m2m'),fallbacks:collectChain('m2f')}}}).then(function(){toast('Mist 2 saved');loadState();});return;}
-  /* mist 3 routing */
-  if(t.id==='saveM3'){api('/routing',{routing:{mist3:{provider:$('#m3-p').value,model:$('#m3-m').value.trim(),fallbacks:[]}}}).then(function(){toast('Mist 3 saved');loadState();});return;}
+  if(t.id==='saveM1'){api('/routing',{routing:{pluto:{provider:$('#m1-p').value,model:$('#m1-m').value.trim(),fallbacks:[]}}}).then(function(){toast('Pluto saved');loadState();});return;}
+  /* sonar routing */
+  if(t.id==='saveM2'){api('/routing',{routing:{sonar:{codingChain:collectChain('m2c'),multimodalChain:collectChain('m2m'),fallbacks:collectChain('m2f')}}}).then(function(){toast('Sonar saved');loadState();});return;}
+  /* omni routing */
+  if(t.id==='saveM3'){api('/routing',{routing:{omni:{provider:$('#m3-p').value,model:$('#m3-m').value.trim(),fallbacks:[]}}}).then(function(){toast('Omni saved');loadState();});return;}
   /* chain add/remove */
-  el=t.closest('[data-add-row]');if(el){var cid=el.dataset.addRow,rows=document.getElementById(cid+'-rows'),i=rows.querySelectorAll('.row').length;if(i>=6){toast('Max 6');return;}var d=document.createElement('div');d.className='row';d.style.marginTop='6px';d.style.alignItems='center';d.innerHTML='<div><select id="'+cid+'-p-'+i+'">'+provOpts(Object.keys(STATE.providers)[0])+'</select></div><div><input id="'+cid+'-m-'+i+'" placeholder="model id"></div><button class="btn sm danger" style="flex:none" data-rm-row="'+cid+'" data-idx="'+i+'">x</button>';rows.appendChild(d);return;}
+  el=t.closest('[data-add-row]');if(el){var cid=el.dataset.addRow,rows=document.getElementById(cid+'-rows'),i=rows.querySelectorAll('.row').length;if(i>=6){toast('Max 6');return;}var defProv=Object.keys(STATE.providers)[0],p=STATE.providers[defProv],modelInput=(p&&p.models&&Array.isArray(p.models))?'<select id="'+cid+'-m-'+i+'">'+modelOpts(defProv,'')+'</select>':'<input id="'+cid+'-m-'+i+'" placeholder="model id">';var d=document.createElement('div');d.className='row';d.style.marginTop='6px';d.style.alignItems='center';d.innerHTML='<div><select id="'+cid+'-p-'+i+'">'+provOpts(defProv)+'</select></div><div>'+modelInput+'</div><button class="btn sm danger" style="flex:none" data-rm-row="'+cid+'" data-idx="'+i+'">x</button>';rows.appendChild(d);return;}
   el=t.closest('[data-rm-row]');if(el){el.closest('.row').remove();return;}
   /* stella */
   if(t.id==='saveStella'){api('/stella',{assistant:$('#stella-a').value}).then(function(){toast('Stella saved');loadState();});return;}
