@@ -718,12 +718,85 @@ async function handleGenerate(req, res) {
   const user = touchUser(userId);
   if (user.banned) return send(res, 403, { error: 'Suspended' });
 
-  // Prefer Fal.ai (fastest and free), then Stability, then Replicate
-  const falKey = keyFor('fal');
-  const stabKey = keyFor('stability');
-  const repKey = keyFor('replicate');
+  const togetherKey = keyFor('together');
+  const openaiKey   = keyFor('openai');
+  const geminiKey   = keyFor('gemini');
+  const falKey      = keyFor('fal');
+  const stabKey     = keyFor('stability');
+  const repKey      = keyFor('replicate');
+  const hfKey       = keyFor('huggingface');
 
-  // Fal.ai (fastest, free tier)
+  // 1. Together AI — genuinely free tier, FLUX model
+  if (togetherKey) {
+    try {
+      const r = await fetch('https://api.together.xyz/v1/images/generations', {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + togetherKey, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'black-forest-labs/FLUX.1-schnell-Free',
+          prompt: body.prompt,
+          n: 1,
+          width: 1024,
+          height: 768,
+          steps: 4
+        })
+      });
+      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Together image error:', t.slice(0,300)); }
+      else {
+        const j = await r.json();
+        if (j.data && j.data[0] && j.data[0].url) {
+          return send(res, 200, { image: j.data[0].url, provider: 'together' });
+        }
+      }
+    } catch (e) { console.error('Together image failed:', e.message); }
+  }
+
+  // 2. OpenAI DALL-E 3
+  if (openaiKey) {
+    try {
+      const r = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + openaiKey, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'dall-e-3',
+          prompt: body.prompt,
+          n: 1,
+          size: '1024x1024',
+          quality: 'standard'
+        })
+      });
+      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('OpenAI DALL-E error:', t.slice(0,300)); }
+      else {
+        const j = await r.json();
+        if (j.data && j.data[0] && j.data[0].url) {
+          return send(res, 200, { image: j.data[0].url, provider: 'openai' });
+        }
+      }
+    } catch (e) { console.error('OpenAI DALL-E failed:', e.message); }
+  }
+
+  // 3. Google Gemini Imagen
+  if (geminiKey) {
+    try {
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=' + encodeURIComponent(geminiKey), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          instances: [{ prompt: body.prompt }],
+          parameters: { sampleCount: 1, aspectRatio: '1:1' }
+        })
+      });
+      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Gemini Imagen error:', t.slice(0,300)); }
+      else {
+        const j = await r.json();
+        if (j.predictions && j.predictions[0] && j.predictions[0].bytesBase64Encoded) {
+          return send(res, 200, { image: 'data:image/png;base64,' + j.predictions[0].bytesBase64Encoded, provider: 'gemini' });
+        }
+      }
+    } catch (e) { console.error('Gemini Imagen failed:', e.message); }
+  }
+
+  // 4. Fal.ai
   if (falKey) {
     try {
       const r = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
@@ -731,15 +804,15 @@ async function handleGenerate(req, res) {
         headers: { 'authorization': 'key ' + falKey, 'content-type': 'application/json' },
         body: JSON.stringify({ prompt: body.prompt, num_inference_steps: 4 })
       });
-      if (!r.ok) { const t = await r.text().catch(() => ''); return send(res, r.status, { error: 'Fal.ai: ' + t.slice(0, 200) }); }
-      const j = await r.json();
-      if (j.images && j.images[0]) {
-        return send(res, 200, { image: j.images[0].url, provider: 'fal' });
+      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Fal error:', t.slice(0,300)); }
+      else {
+        const j = await r.json();
+        if (j.images && j.images[0]) return send(res, 200, { image: j.images[0].url, provider: 'fal' });
       }
-      return send(res, 502, { error: 'Fal.ai: no image in response' });
-    } catch (e) { return send(res, 502, { error: 'Fal.ai request failed: ' + e.message }); }
+    } catch (e) { console.error('Fal failed:', e.message); }
   }
 
+  // 5. Stability AI
   if (stabKey) {
     try {
       const form = new FormData();
@@ -751,58 +824,55 @@ async function handleGenerate(req, res) {
         headers: { authorization: 'Bearer ' + stabKey, accept: 'image/*' },
         body: form
       });
-      if (!r.ok) { const t = await r.text().catch(()=> ''); return send(res, r.status, { error: 'Stability: ' + t.slice(0,200) }); }
-      const buf = Buffer.from(await r.arrayBuffer());
-      return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'stability' });
-    } catch (e) { return send(res, 502, { error: 'Stability request failed: ' + e.message }); }
+      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Stability error:', t.slice(0,300)); }
+      else {
+        const buf = Buffer.from(await r.arrayBuffer());
+        return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'stability' });
+      }
+    } catch (e) { console.error('Stability failed:', e.message); }
   }
 
+  // 6. Replicate
   if (repKey) {
     try {
       const start = await fetch('https://api.replicate.com/v1/predictions', {
         method: 'POST',
         headers: { authorization: 'Token ' + repKey, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          version: body.model || 'black-forest-labs/flux-schnell',
-          input: { prompt: body.prompt }
-        })
+        body: JSON.stringify({ version: 'black-forest-labs/flux-schnell', input: { prompt: body.prompt } })
       });
       const p = await start.json();
-      if (!p.id) return send(res, 502, { error: 'Replicate: ' + (p.detail || 'unknown') });
-      // Poll for completion (max 60s)
-      for (let i = 0; i < 30; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        const s = await fetch('https://api.replicate.com/v1/predictions/' + p.id, {
-          headers: { authorization: 'Token ' + repKey }
-        }).then(r => r.json());
-        if (s.status === 'succeeded') {
-          const url = Array.isArray(s.output) ? s.output[0] : s.output;
-          return send(res, 200, { image: url, provider: 'replicate' });
+      if (p.id) {
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const s = await fetch('https://api.replicate.com/v1/predictions/' + p.id, {
+            headers: { authorization: 'Token ' + repKey }
+          }).then(r => r.json());
+          if (s.status === 'succeeded') {
+            const url = Array.isArray(s.output) ? s.output[0] : s.output;
+            return send(res, 200, { image: url, provider: 'replicate' });
+          }
+          if (s.status === 'failed') break;
         }
-        if (s.status === 'failed') return send(res, 502, { error: 'Replicate: generation failed' });
       }
-      return send(res, 504, { error: 'Replicate: timed out after 60s' });
-    } catch (e) { return send(res, 502, { error: 'Replicate request failed: ' + e.message }); }
+    } catch (e) { console.error('Replicate failed:', e.message); }
   }
 
-  // HuggingFace Inference API (text-to-image)
-  const hfKey = keyFor('huggingface');
+  // 7. HuggingFace
   if (hfKey) {
     try {
-      const hfModel = body.hfModel || 'stabilityai/stable-diffusion-xl-base-1.0';
-      const r = await fetch('https://api-inference.huggingface.co/models/' + hfModel, {
+      const r = await fetch('https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0', {
         method: 'POST',
         headers: { authorization: 'Bearer ' + hfKey },
         body: Buffer.from(body.prompt)
       });
-      if (!r.ok) { const t = await r.text().catch(() => ''); return send(res, r.status, { error: 'HuggingFace: ' + t.slice(0, 200) }); }
-      const buf = Buffer.from(await r.arrayBuffer());
-      return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'huggingface' });
-    } catch (e) { return send(res, 502, { error: 'HuggingFace request failed: ' + e.message }); }
+      if (r.ok) {
+        const buf = Buffer.from(await r.arrayBuffer());
+        return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'huggingface' });
+      }
+    } catch (e) { console.error('HuggingFace failed:', e.message); }
   }
 
-  // Cerebras doesn't do image generation — but if it's the only key, use it to describe what it would generate
-  return send(res, 503, { error: 'No image provider configured. Add a Stability AI, Replicate, Fal.ai, or HuggingFace key in the admin console.' });
+  return send(res, 503, { error: 'No image provider configured or all providers failed. Add a Together AI, Fal.ai, Stability AI, or Replicate key in the admin console.' });
 }
 
 /* ------------------------------ workspaces (multi-user accounts) ------------------------------ */
