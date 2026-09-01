@@ -778,19 +778,19 @@ async function handleGenerate(req, res) {
   // 3. Google Gemini Imagen
   if (geminiKey) {
     try {
-      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=' + encodeURIComponent(geminiKey), {
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:generateImages?key=' + encodeURIComponent(geminiKey), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          instances: [{ prompt: body.prompt }],
-          parameters: { sampleCount: 1, aspectRatio: '1:1' }
+          prompt: body.prompt,
+          config: { numberOfImages: 1 }
         })
       });
       if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Gemini Imagen error:', t.slice(0,300)); }
       else {
         const j = await r.json();
-        if (j.predictions && j.predictions[0] && j.predictions[0].bytesBase64Encoded) {
-          return send(res, 200, { image: 'data:image/png;base64,' + j.predictions[0].bytesBase64Encoded, provider: 'gemini' });
+        if (j.generatedImages && j.generatedImages[0] && j.generatedImages[0].image && j.generatedImages[0].image.imageBytes) {
+          return send(res, 200, { image: 'data:image/png;base64,' + j.generatedImages[0].image.imageBytes, provider: 'gemini' });
         }
       }
     } catch (e) { console.error('Gemini Imagen failed:', e.message); }
