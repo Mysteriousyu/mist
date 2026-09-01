@@ -726,7 +726,79 @@ async function handleGenerate(req, res) {
   const repKey      = keyFor('replicate');
   const hfKey       = keyFor('huggingface');
 
-  // 1. Together AI — genuinely free tier, FLUX model
+  // ==================== FREE PROVIDERS (no key / no credits needed) ====================
+
+  // 1. Pollinations.ai — completely FREE, no API key, uses FLUX
+  try {
+    const encoded = encodeURIComponent(body.prompt);
+    const seed = Math.floor(Math.random() * 999999);
+    const polUrl = 'https://image.pollinations.ai/prompt/' + encoded + '?width=1024&height=768&seed=' + seed + '&nologo=true&model=flux';
+    const r = await fetch(polUrl);
+    if (r.ok) {
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 1000) {
+        return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'pollinations' });
+      }
+    }
+    console.error('Pollinations returned non-image or failed');
+  } catch (e) { console.error('Pollinations failed:', e.message); }
+
+  // 2. Stable Horde — FREE, community GPUs, no API key needed (anonymous)
+  try {
+    const startR = await fetch('https://stablehorde.net/api/v2/generate/async', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'apikey': '0000000000' },
+      body: JSON.stringify({
+        prompt: body.prompt,
+        params: { steps: 20, width: 1024, height: 768, cfg_scale: 7 },
+        nsfw: false, censor_nsfw: true,
+        models: ['FLUX.1 [schnell]']
+      })
+    });
+    const startJ = await startR.json();
+    if (startJ.id) {
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        const checkR = await fetch('https://stablehorde.net/api/v2/generate/check/' + startJ.id);
+        const checkJ = await checkR.json();
+        if (checkJ.done) {
+          const statusR = await fetch('https://stablehorde.net/api/v2/generate/status/' + startJ.id);
+          const statusJ = await statusR.json();
+          if (statusJ.generations && statusJ.generations[0] && statusJ.generations[0].img) {
+            return send(res, 200, { image: statusJ.generations[0].img, provider: 'stablehorde' });
+          }
+          break;
+        }
+        if (checkJ.faulted) break;
+      }
+    }
+    console.error('Stable Horde: timed out or failed');
+  } catch (e) { console.error('Stable Horde failed:', e.message); }
+
+  // 3. AirForce API — FREE, no key needed, multiple models
+  try {
+    const afUrl = 'https://api.airforce/v1/images/generations';
+    const r = await fetch(afUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'flux',
+        prompt: body.prompt,
+        size: '1024x768'
+      })
+    });
+    if (r.ok) {
+      const j = await r.json();
+      if (j.data && j.data[0] && j.data[0].url) {
+        return send(res, 200, { image: j.data[0].url, provider: 'airforce' });
+      }
+    }
+    console.error('AirForce: no image returned');
+  } catch (e) { console.error('AirForce failed:', e.message); }
+
+  // ==================== FREE TIER PROVIDERS (need key but have free credits) ====================
+
+  // 4. Together AI — free tier, FLUX model
   if (togetherKey) {
     try {
       const r = await fetch('https://api.together.xyz/v1/images/generations', {
@@ -734,59 +806,44 @@ async function handleGenerate(req, res) {
         headers: { authorization: 'Bearer ' + togetherKey, 'content-type': 'application/json' },
         body: JSON.stringify({
           model: 'black-forest-labs/FLUX.1-schnell-Free',
-          prompt: body.prompt,
-          n: 1,
-          width: 1024,
-          height: 768,
-          steps: 4
+          prompt: body.prompt, n: 1, width: 1024, height: 768, steps: 4
         })
       });
-      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Together image error:', t.slice(0,300)); }
+      if (!r.ok) { console.error('Together image error:', (await r.text().catch(()=>'')).slice(0,300)); }
       else {
         const j = await r.json();
-        if (j.data && j.data[0] && j.data[0].url) {
-          return send(res, 200, { image: j.data[0].url, provider: 'together' });
-        }
+        if (j.data && j.data[0] && j.data[0].url) return send(res, 200, { image: j.data[0].url, provider: 'together' });
       }
     } catch (e) { console.error('Together image failed:', e.message); }
   }
 
-  // 2. OpenAI DALL-E 3
+  // ==================== PAID PROVIDERS (fallbacks) ====================
+
+  // 5. OpenAI DALL-E 3
   if (openaiKey) {
     try {
       const r = await fetch('https://api.openai.com/v1/images/generations', {
         method: 'POST',
         headers: { authorization: 'Bearer ' + openaiKey, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'dall-e-3',
-          prompt: body.prompt,
-          n: 1,
-          size: '1024x1024',
-          quality: 'standard'
-        })
+        body: JSON.stringify({ model: 'dall-e-3', prompt: body.prompt, n: 1, size: '1024x1024', quality: 'standard' })
       });
-      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('OpenAI DALL-E error:', t.slice(0,300)); }
+      if (!r.ok) { console.error('OpenAI DALL-E error:', (await r.text().catch(()=>'')).slice(0,300)); }
       else {
         const j = await r.json();
-        if (j.data && j.data[0] && j.data[0].url) {
-          return send(res, 200, { image: j.data[0].url, provider: 'openai' });
-        }
+        if (j.data && j.data[0] && j.data[0].url) return send(res, 200, { image: j.data[0].url, provider: 'openai' });
       }
     } catch (e) { console.error('OpenAI DALL-E failed:', e.message); }
   }
 
-  // 3. Google Gemini Imagen
+  // 6. Google Gemini Imagen
   if (geminiKey) {
     try {
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:generateImages?key=' + encodeURIComponent(geminiKey), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          prompt: body.prompt,
-          config: { numberOfImages: 1 }
-        })
+        body: JSON.stringify({ prompt: body.prompt, config: { numberOfImages: 1 } })
       });
-      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Gemini Imagen error:', t.slice(0,300)); }
+      if (!r.ok) { console.error('Gemini Imagen error:', (await r.text().catch(()=>'')).slice(0,300)); }
       else {
         const j = await r.json();
         if (j.generatedImages && j.generatedImages[0] && j.generatedImages[0].image && j.generatedImages[0].image.imageBytes) {
@@ -796,7 +853,7 @@ async function handleGenerate(req, res) {
     } catch (e) { console.error('Gemini Imagen failed:', e.message); }
   }
 
-  // 4. Fal.ai
+  // 7. Fal.ai
   if (falKey) {
     try {
       const r = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
@@ -804,15 +861,14 @@ async function handleGenerate(req, res) {
         headers: { 'authorization': 'key ' + falKey, 'content-type': 'application/json' },
         body: JSON.stringify({ prompt: body.prompt, num_inference_steps: 4 })
       });
-      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Fal error:', t.slice(0,300)); }
-      else {
+      if (r.ok) {
         const j = await r.json();
         if (j.images && j.images[0]) return send(res, 200, { image: j.images[0].url, provider: 'fal' });
       }
     } catch (e) { console.error('Fal failed:', e.message); }
   }
 
-  // 5. Stability AI
+  // 8. Stability AI
   if (stabKey) {
     try {
       const form = new FormData();
@@ -824,15 +880,14 @@ async function handleGenerate(req, res) {
         headers: { authorization: 'Bearer ' + stabKey, accept: 'image/*' },
         body: form
       });
-      if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Stability error:', t.slice(0,300)); }
-      else {
+      if (r.ok) {
         const buf = Buffer.from(await r.arrayBuffer());
         return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'stability' });
       }
     } catch (e) { console.error('Stability failed:', e.message); }
   }
 
-  // 6. Replicate
+  // 9. Replicate
   if (repKey) {
     try {
       const start = await fetch('https://api.replicate.com/v1/predictions', {
@@ -857,7 +912,7 @@ async function handleGenerate(req, res) {
     } catch (e) { console.error('Replicate failed:', e.message); }
   }
 
-  // 7. HuggingFace
+  // 10. HuggingFace
   if (hfKey) {
     try {
       const r = await fetch('https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0', {
@@ -872,7 +927,7 @@ async function handleGenerate(req, res) {
     } catch (e) { console.error('HuggingFace failed:', e.message); }
   }
 
-  return send(res, 503, { error: 'No image provider configured or all providers failed. Add a Together AI, Fal.ai, Stability AI, or Replicate key in the admin console.' });
+  return send(res, 503, { error: 'All image providers failed. Check your API keys and credits in the admin console.' });
 }
 
 /* ------------------------------ workspaces (multi-user accounts) ------------------------------ */
