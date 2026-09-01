@@ -109,26 +109,34 @@ function blankData() {
       replicate:  { label: 'Replicate (images/video)', format: 'replicate', baseUrl: 'https://api.replicate.com/v1/predictions', apiKey: '' }
     },
     routing: {
-      pluto: { provider: 'groq', model: 'llama-3.3-70b-versatile', fallbacks: [{ provider: 'nim', model: 'google/gemma-4-31b-it' }] },
+      pluto: { provider: 'groq', model: 'llama-3.3-70b-versatile', fallbacks: [
+        { provider: 'cerebras', model: 'llama-3.3-70b' },
+        { provider: 'together', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+        { provider: 'mistral', model: 'mistral-large-latest' },
+        { provider: 'nim', model: 'google/gemma-4-31b-it' }
+      ] },
       /* Mist 2 has two chains:
          - codingChain: used for plain text / coding (up to 6 keys)
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
         codingChain: [
           { provider: 'anthropic', model: 'claude-opus-4-6' },
-          { provider: 'nim',  model: 'google/gemma-4-31b-it' },
-          { provider: 'qwen', model: 'qwen3.8-max' },
-          { provider: 'xai',  model: 'grok-4.5' }
+          { provider: 'cerebras', model: 'llama-3.3-70b' },
+          { provider: 'together', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+          { provider: 'mistral', model: 'mistral-large-latest' }
         ],
         multimodalChain: [
-          { provider: 'gemini', model: 'gemini-2.0-flash' }
+          { provider: 'gemini', model: 'gemini-2.0-flash' },
+          { provider: 'openai', model: 'gpt-4o' }
         ],
         fallbacks: []
       },
       /* Mist 3 is a chat model that crafts prompts. The actual image generation
          happens via /api/generate route, using stability/replicate. */
       omni: { provider: 'gemini', model: 'gemini-2.0-flash', fallbacks: [
-        { provider: 'nim', model: 'google/gemma-4-31b-it' }
+        { provider: 'openai', model: 'gpt-4o' },
+        { provider: 'mistral', model: 'mistral-large-latest' },
+        { provider: 'cerebras', model: 'llama-3.3-70b' }
       ] }
     },
     /* Custom system prompts — leave blank to use built-in prompts */
