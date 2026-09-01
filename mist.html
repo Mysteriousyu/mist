@@ -1330,7 +1330,7 @@ async function run(chat) {
       msg.pending = false;
       if (!r.ok) {
         msg.content = '**Image generation failed.**\n\n' + (j.error || 'Unknown error') +
-          '\n\n*Add a Stability AI or Replicate key in the admin console → Keys & Models to enable Omni.*';
+          '\n\n*Add a Stability AI, Replicate, or HuggingFace key in the admin console → Keys & Models to enable Omni.*';
       } else if (j.image) {
         msg.content = '![generated image](' + j.image + ')\n\n*Generated with ' + (j.provider || 'model') + '.*';
       } else {

@@ -66,28 +66,44 @@ function blankData() {
   return {
     settings: { passHash: null, passSalt: null },
     providers: {
-      groq:       { label: 'Groq (⚡ FASTEST)',format: 'openai',    baseUrl: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '' },
-      nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '' },
-      openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '' },
-      anthropic:  { label: 'Anthropic (Claude)',format: 'anthropic', baseUrl: '', apiKey: '' },
-      gemini:     { label: 'Google Gemini',    format: 'gemini',    baseUrl: '', apiKey: '' },
-      xai:        { label: 'xAI (Grok)',       format: 'openai',    baseUrl: 'https://api.x.ai/v1/chat/completions', apiKey: '' },
-      mistral:    { label: 'Mistral',          format: 'openai',    baseUrl: 'https://api.mistral.ai/v1/chat/completions', apiKey: '' },
-      deepseek:   { label: 'DeepSeek',         format: 'openai',    baseUrl: 'https://api.deepseek.com/chat/completions', apiKey: '' },
+      groq:       { label: 'Groq (⚡ FASTEST)',format: 'openai',    baseUrl: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '',
+                    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'] },
+      nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
+                    models: ['google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
+      openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '',
+                    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'] },
+      anthropic:  { label: 'Anthropic (Claude)',format: 'anthropic', baseUrl: '', apiKey: '',
+                    models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] },
+      gemini:     { label: 'Google Gemini',    format: 'gemini',    baseUrl: '', apiKey: '',
+                    models: ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
+      xai:        { label: 'xAI (Grok)',       format: 'openai',    baseUrl: 'https://api.x.ai/v1/chat/completions', apiKey: '',
+                    models: ['grok-4.5', 'grok-3', 'grok-3-mini', 'grok-2'] },
+      mistral:    { label: 'Mistral',          format: 'openai',    baseUrl: 'https://api.mistral.ai/v1/chat/completions', apiKey: '',
+                    models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest', 'codestral-latest'] },
+      deepseek:   { label: 'DeepSeek',         format: 'openai',    baseUrl: 'https://api.deepseek.com/chat/completions', apiKey: '',
+                    models: ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'] },
       kimi:       { label: 'Kimi (Moonshot)',  format: 'openai',    baseUrl: 'https://api.moonshot.ai/v1/chat/completions', apiKey: '' },
-      perplexity: { label: 'Perplexity',       format: 'openai',    baseUrl: 'https://api.perplexity.ai/chat/completions', apiKey: '' },
-      qwen:       { label: 'Qwen (Alibaba)',   format: 'openai',    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', apiKey: '' },
+      perplexity: { label: 'Perplexity',       format: 'openai',    baseUrl: 'https://api.perplexity.ai/chat/completions', apiKey: '',
+                    models: ['sonar-pro', 'sonar', 'sonar-reasoning-pro', 'sonar-reasoning'] },
+      qwen:       { label: 'Qwen (Alibaba)',   format: 'openai',    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', apiKey: '',
+                    models: ['qwen3.8-max', 'qwen-max', 'qwen-plus', 'qwen-turbo'] },
       /* New providers */
-      huggingface:{ label: 'Hugging Face',     format: 'openai',    baseUrl: 'https://api-inference.huggingface.co/v1/chat/completions', apiKey: '' },
-      together:   { label: 'Together AI',      format: 'openai',    baseUrl: 'https://api.together.xyz/v1/chat/completions', apiKey: '' },
-      fireworks:  { label: 'Fireworks AI',     format: 'openai',    baseUrl: 'https://api.fireworks.ai/inference/v1/chat/completions', apiKey: '' },
+      huggingface:{ label: 'Hugging Face',     format: 'openai',    baseUrl: 'https://api-inference.huggingface.co/v1/chat/completions', apiKey: '',
+                    models: ['meta-llama/Llama-3.1-70B-Instruct', 'mistralai/Mixtral-8x7B-Instruct-v0.1', 'microsoft/Phi-3-mini-4k-instruct', 'google/gemma-2-9b-it'] },
+      together:   { label: 'Together AI',      format: 'openai',    baseUrl: 'https://api.together.xyz/v1/chat/completions', apiKey: '',
+                    models: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'mistralai/Mixtral-8x22B-Instruct-v0.1', 'Qwen/Qwen2.5-72B-Instruct-Turbo'] },
+      fireworks:  { label: 'Fireworks AI',     format: 'openai',    baseUrl: 'https://api.fireworks.ai/inference/v1/chat/completions', apiKey: '',
+                    models: ['accounts/fireworks/models/llama-v3p3-70b-instruct', 'accounts/fireworks/models/mixtral-8x22b-instruct'] },
       openrouter: { label: 'OpenRouter',       format: 'openai',    baseUrl: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '' },
-      cohere:     { label: 'Cohere',           format: 'openai',    baseUrl: 'https://api.cohere.com/v2/chat', apiKey: '' },
-      sambanova:  { label: 'SambaNova',        format: 'openai',    baseUrl: 'https://api.sambanova.ai/v1/chat/completions', apiKey: '' },
+      cohere:     { label: 'Cohere',           format: 'openai',    baseUrl: 'https://api.cohere.com/v2/chat', apiKey: '',
+                    models: ['command-r-plus', 'command-r', 'command-light'] },
+      sambanova:  { label: 'SambaNova',        format: 'openai',    baseUrl: 'https://api.sambanova.ai/v1/chat/completions', apiKey: '',
+                    models: ['Meta-Llama-3.3-70B-Instruct', 'Meta-Llama-3.1-8B-Instruct'] },
       cerebras:   { label: 'Cerebras (⚡ FAST)',format: 'openai',    baseUrl: 'https://api.cerebras.ai/v1/chat/completions', apiKey: '', 
-                    models: ['llama-3.1-70b', 'llama-3.1-8b', 'llama-2-70b-chat'] },
+                    models: ['llama-3.3-70b', 'llama-3.1-8b', 'llama-3.1-70b'] },
       lepton:     { label: 'Lepton AI',        format: 'openai',    baseUrl: 'https://llama3-2-3b.lepton.run/api/v1/chat/completions', apiKey: '' },
-      ai21:       { label: 'AI21 (Jamba)',     format: 'openai',    baseUrl: 'https://api.ai21.com/studio/v1/chat/completions', apiKey: '' },
+      ai21:       { label: 'AI21 (Jamba)',     format: 'openai',    baseUrl: 'https://api.ai21.com/studio/v1/chat/completions', apiKey: '',
+                    models: ['jamba-1.5-large', 'jamba-1.5-mini'] },
       /* Image/video providers for Omni */
       stability:  { label: 'Stability AI (images)', format: 'stability', baseUrl: 'https://api.stability.ai/v2beta/stable-image/generate/core', apiKey: '' },
       replicate:  { label: 'Replicate (images/video)', format: 'replicate', baseUrl: 'https://api.replicate.com/v1/predictions', apiKey: '' }
@@ -464,7 +480,8 @@ async function handleAdminApi(req, res, urlPath) {
       providers[id] = {
         label: p.label, format: p.format, baseUrl: p.baseUrl || '',
         hasKey: !!resolvedKey, keyMask: mask(resolvedKey),
-        fromEnv // true = key came from environment variable, not admin panel
+        fromEnv, // true = key came from environment variable, not admin panel
+        models: p.models || null
       };
     }
     return send(res, 200, {
@@ -739,7 +756,25 @@ async function handleGenerate(req, res) {
       return send(res, 504, { error: 'Replicate: timed out after 60s' });
     } catch (e) { return send(res, 502, { error: 'Replicate request failed: ' + e.message }); }
   }
-  return send(res, 503, { error: 'No image provider configured. Add a Stability AI or Replicate key in the admin console.' });
+
+  // HuggingFace Inference API (text-to-image)
+  const hfKey = keyFor('huggingface');
+  if (hfKey) {
+    try {
+      const hfModel = body.hfModel || 'stabilityai/stable-diffusion-xl-base-1.0';
+      const r = await fetch('https://api-inference.huggingface.co/models/' + hfModel, {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + hfKey, 'content-type': 'application/json' },
+        body: JSON.stringify({ inputs: body.prompt })
+      });
+      if (!r.ok) { const t = await r.text().catch(() => ''); return send(res, r.status, { error: 'HuggingFace: ' + t.slice(0, 200) }); }
+      const buf = Buffer.from(await r.arrayBuffer());
+      return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'huggingface' });
+    } catch (e) { return send(res, 502, { error: 'HuggingFace request failed: ' + e.message }); }
+  }
+
+  // Cerebras doesn't do image generation — but if it's the only key, use it to describe what it would generate
+  return send(res, 503, { error: 'No image provider configured. Add a Stability AI, Replicate, or Hugging Face key in the admin console.' });
 }
 
 /* ------------------------------ workspaces (multi-user accounts) ------------------------------ */
@@ -1184,8 +1219,8 @@ function renderKeys(){
     +'<label style="font-weight:600;font-size:12px">Chat model (crafts prompts)</label>'
     +'<select id="m3-p" style="margin-bottom:4px">'+provOpts(r3.provider)+'</select>'
     +m3ModelInput
-    +'<label style="font-weight:600;font-size:12px">Image provider (Stability or Replicate key above)</label>'
-    +'<p class="muted" style="font-size:11.5px;margin:2px 0 0">'+(P.stability && P.stability.hasKey ? '<span class="badge ok">Stability ready</span>' : P.replicate && P.replicate.hasKey ? '<span class="badge ok">Replicate ready</span>' : '<span class="badge no">Add a Stability or Replicate key above</span>')+'</p>'
+    +'<label style="font-weight:600;font-size:12px">Image provider (Stability, Replicate, or HuggingFace key above)</label>'
+    +'<p class="muted" style="font-size:11.5px;margin:2px 0 0">'+(P.stability && P.stability.hasKey ? '<span class="badge ok">Stability ready</span>' : P.replicate && P.replicate.hasKey ? '<span class="badge ok">Replicate ready</span>' : P.huggingface && P.huggingface.hasKey ? '<span class="badge ok">HuggingFace ready</span>' : '<span class="badge no">Add a Stability, Replicate, or HuggingFace key above</span>')+'</p>'
     +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM3">Save Omni</button></div>';
   html+='</div>';
 
