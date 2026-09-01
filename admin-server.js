@@ -106,6 +106,7 @@ function blankData() {
                     models: ['jamba-1.5-large', 'jamba-1.5-mini'] },
       /* Image/video providers for Omni */
       stability:  { label: 'Stability AI (images)', format: 'stability', baseUrl: 'https://api.stability.ai/v2beta/stable-image/generate/core', apiKey: '' },
+      fal:        { label: 'Fal.ai (⚡ FAST images)', format: 'openai', baseUrl: 'https://queue.fal.run/fal-ai/fast-sdxl', apiKey: '' },
       replicate:  { label: 'Replicate (images/video)', format: 'replicate', baseUrl: 'https://api.replicate.com/v1/predictions', apiKey: '' }
     },
     routing: {
@@ -717,9 +718,27 @@ async function handleGenerate(req, res) {
   const user = touchUser(userId);
   if (user.banned) return send(res, 403, { error: 'Suspended' });
 
-  // Prefer Stability, then Replicate
+  // Prefer Fal.ai (fastest and free), then Stability, then Replicate
+  const falKey = keyFor('fal');
   const stabKey = keyFor('stability');
   const repKey = keyFor('replicate');
+
+  // Fal.ai (fastest, free tier)
+  if (falKey) {
+    try {
+      const r = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
+        method: 'POST',
+        headers: { 'authorization': 'key ' + falKey, 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: body.prompt, num_inference_steps: 4 })
+      });
+      if (!r.ok) { const t = await r.text().catch(() => ''); return send(res, r.status, { error: 'Fal.ai: ' + t.slice(0, 200) }); }
+      const j = await r.json();
+      if (j.images && j.images[0]) {
+        return send(res, 200, { image: j.images[0].url, provider: 'fal' });
+      }
+      return send(res, 502, { error: 'Fal.ai: no image in response' });
+    } catch (e) { return send(res, 502, { error: 'Fal.ai request failed: ' + e.message }); }
+  }
 
   if (stabKey) {
     try {
@@ -736,7 +755,6 @@ async function handleGenerate(req, res) {
       const buf = Buffer.from(await r.arrayBuffer());
       return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'stability' });
     } catch (e) { return send(res, 502, { error: 'Stability request failed: ' + e.message }); }
-  }
   if (repKey) {
     try {
       const start = await fetch('https://api.replicate.com/v1/predictions', {
@@ -782,7 +800,7 @@ async function handleGenerate(req, res) {
   }
 
   // Cerebras doesn't do image generation — but if it's the only key, use it to describe what it would generate
-  return send(res, 503, { error: 'No image provider configured. Add a Stability AI, Replicate, or Hugging Face key in the admin console.' });
+  return send(res, 503, { error: 'No image provider configured. Add a Stability AI, Replicate, Fal.ai, or HuggingFace key in the admin console.' });
 }
 
 /* ------------------------------ workspaces (multi-user accounts) ------------------------------ */
@@ -1227,8 +1245,8 @@ function renderKeys(){
     +'<label style="font-weight:600;font-size:12px">Chat model (crafts prompts)</label>'
     +'<select id="m3-p" style="margin-bottom:4px">'+provOpts(r3.provider)+'</select>'
     +m3ModelInput
-    +'<label style="font-weight:600;font-size:12px">Image provider (Stability, Replicate, or HuggingFace key above)</label>'
-    +'<p class="muted" style="font-size:11.5px;margin:2px 0 0">'+(P.stability && P.stability.hasKey ? '<span class="badge ok">Stability ready</span>' : P.replicate && P.replicate.hasKey ? '<span class="badge ok">Replicate ready</span>' : P.huggingface && P.huggingface.hasKey ? '<span class="badge ok">HuggingFace ready</span>' : '<span class="badge no">Add a Stability, Replicate, or HuggingFace key above</span>')+'</p>'
+    +'<label style="font-weight:600;font-size:12px">Image provider (Stability, Replicate, Fal.ai, or HuggingFace key above)</label>'
+    +'<p class="muted" style="font-size:11.5px;margin:2px 0 0">'+(P.stability && P.stability.hasKey ? '<span class="badge ok">Stability ready</span>' : P.replicate && P.replicate.hasKey ? '<span class="badge ok">Replicate ready</span>' : P.fal && P.fal.hasKey ? '<span class="badge ok">Fal.ai ready</span>' : P.huggingface && P.huggingface.hasKey ? '<span class="badge ok">HuggingFace ready</span>' : '<span class="badge no">Add a Stability, Replicate, Fal.ai, or HuggingFace key above</span>')+'</p>'
     +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM3">Save Omni</button></div>';
   html+='</div>';
 
