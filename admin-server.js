@@ -772,8 +772,8 @@ async function handleGenerate(req, res) {
       const hfModel = body.hfModel || 'stabilityai/stable-diffusion-xl-base-1.0';
       const r = await fetch('https://api-inference.huggingface.co/models/' + hfModel, {
         method: 'POST',
-        headers: { authorization: 'Bearer ' + hfKey, 'content-type': 'application/json' },
-        body: JSON.stringify({ inputs: body.prompt })
+        headers: { authorization: 'Bearer ' + hfKey },
+        body: Buffer.from(body.prompt)
       });
       if (!r.ok) { const t = await r.text().catch(() => ''); return send(res, r.status, { error: 'HuggingFace: ' + t.slice(0, 200) }); }
       const buf = Buffer.from(await r.arrayBuffer());
