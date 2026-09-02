@@ -387,44 +387,34 @@ async function handleChat(req, res) {
   const targets = resolveTargets(assistant, messages);
   if (!targets.length) return send(res, 503, { error: 'No API key configured for ' + assistant + '. Set one in the admin console → Keys & Models.' });
 
-  // use custom system prompt from admin if set, otherwise use what the site sent
   const customPrompt = (DB.systemPrompts || {})[assistant];
   const basePrompt = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (body.system || 'You are a helpful assistant.');
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  
-  // Auto web search: detect if user needs current info and search DuckDuckGo (free, no key)
+
+  // Quick web search — only if the question needs current info, hard 1.5s timeout
   let searchContext = '';
   const lastMsg = messages[messages.length - 1];
   const lastText = (typeof lastMsg?.content === 'string' ? lastMsg.content : '').toLowerCase();
   const needsSearch = /(today|latest|recent|current|news|weather|score|price|update|who won|what happened|right now|this week|this month|2025|2026)/i.test(lastText);
-  
-  if (needsSearch && lastText.length > 5) {
+
+  if (needsSearch && lastText.length > 8) {
     try {
-      const q = encodeURIComponent(typeof lastMsg.content === 'string' ? lastMsg.content.slice(0, 150) : '');
-      const controller = new AbortController();
-      const searchTimeout = setTimeout(() => controller.abort(), 2000); // 2 second max
+      const q = encodeURIComponent(typeof lastMsg.content === 'string' ? lastMsg.content.slice(0, 100) : '');
       const sr = await fetch('https://api.duckduckgo.com/?q=' + q + '&format=json&no_html=1&skip_disambig=1', {
-        headers: { 'User-Agent': 'MistBot/1.0' },
-        signal: controller.signal
+        signal: AbortSignal.timeout(1500)
       });
-      clearTimeout(searchTimeout);
       if (sr.ok) {
         const sj = await sr.json();
-        const results = [];
-        if (sj.Abstract) results.push(sj.Abstract);
-        if (sj.Answer) results.push(sj.Answer);
-        if (sj.RelatedTopics) {
-          sj.RelatedTopics.slice(0, 3).forEach(t => { if (t.Text) results.push(t.Text); });
-        }
-        if (results.length > 0) {
-          searchContext = '\n\n[Web search results]:\n' + results.join('\n');
-        }
+        const bits = [];
+        if (sj.Abstract) bits.push(sj.Abstract);
+        if (sj.Answer) bits.push(sj.Answer);
+        if (bits.length) searchContext = '\n\n[Web info]: ' + bits.join(' ');
       }
-    } catch (e) { /* search failed or timed out — continue without it */ }
+    } catch { /* timed out or failed — continue without search */ }
   }
 
-  const system = basePrompt + '\n\nToday\'s date is ' + dateStr + '. Always use this as the current date when asked.' + searchContext;
+  const system = basePrompt + '\n\nToday is ' + dateStr + '.' + searchContext;
   const meta = { chatId: body.chatId, title: body.title, assistant };
 
   for (let i = 0; i < targets.length; i++) {
