@@ -73,7 +73,7 @@ function blankData() {
       openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '',
                     models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'] },
       anthropic:  { label: 'Anthropic (Claude)',format: 'anthropic', baseUrl: '', apiKey: '',
-                    models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] },
+                    models: ['claude-fable-5-1', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] },
       gemini:     { label: 'Google Gemini',    format: 'gemini',    baseUrl: '', apiKey: '',
                     models: ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
       xai:        { label: 'xAI (Grok)',       format: 'openai',    baseUrl: 'https://api.x.ai/v1/chat/completions', apiKey: '',
@@ -121,7 +121,7 @@ function blankData() {
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
         codingChain: [
-          { provider: 'anthropic', model: 'claude-opus-4-6' },
+          { provider: 'anthropic', model: 'claude-fable-5-1' },
           { provider: 'cerebras', model: 'llama-3.3-70b' },
           { provider: 'together', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
           { provider: 'mistral', model: 'mistral-large-latest' }
@@ -389,7 +389,38 @@ async function handleChat(req, res) {
 
   // use custom system prompt from admin if set, otherwise use what the site sent
   const customPrompt = (DB.systemPrompts || {})[assistant];
-  const system = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (body.system || 'You are a helpful assistant.');
+  const basePrompt = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (body.system || 'You are a helpful assistant.');
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  
+  // Auto web search: detect if user needs current info and search DuckDuckGo (free, no key)
+  let searchContext = '';
+  const lastMsg = messages[messages.length - 1];
+  const lastText = (typeof lastMsg?.content === 'string' ? lastMsg.content : '').toLowerCase();
+  const needsSearch = /(today|latest|recent|current|news|weather|score|price|update|who won|what happened|right now|this week|this month|2025|2026)/i.test(lastText);
+  
+  if (needsSearch && lastText.length > 5) {
+    try {
+      const q = encodeURIComponent(typeof lastMsg.content === 'string' ? lastMsg.content.slice(0, 150) : '');
+      const sr = await fetch('https://api.duckduckgo.com/?q=' + q + '&format=json&no_html=1&skip_disambig=1', {
+        headers: { 'User-Agent': 'MistBot/1.0' }
+      });
+      if (sr.ok) {
+        const sj = await sr.json();
+        const results = [];
+        if (sj.Abstract) results.push(sj.Abstract);
+        if (sj.Answer) results.push(sj.Answer);
+        if (sj.RelatedTopics) {
+          sj.RelatedTopics.slice(0, 5).forEach(t => { if (t.Text) results.push(t.Text); });
+        }
+        if (results.length > 0) {
+          searchContext = '\n\n[Web search results for context - use these to give current/accurate info]:\n' + results.join('\n');
+        }
+      }
+    } catch (e) { /* search failed silently, continue without it */ }
+  }
+
+  const system = basePrompt + '\n\nToday\'s date is ' + dateStr + '. Always use this as the current date when asked.' + searchContext;
   const meta = { chatId: body.chatId, title: body.title, assistant };
 
   for (let i = 0; i < targets.length; i++) {
@@ -1118,6 +1149,92 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
       return res.end('<h2 style="font-family:system-ui;padding:40px">Stellar not found</h2>' +
         '<p style="font-family:system-ui;padding:0 40px">Put <code>stellar.html</code> next to <code>admin-server.js</code> to serve it here.</p>');
+    }
+  }
+
+  // Web proxy for Stellar browser — fetches pages server-side to bypass iframe restrictions
+  if (urlPath === '/proxy' && req.method === 'GET') {
+    const qs = req.url.split('?')[1] || '';
+    const params = new URLSearchParams(qs);
+    const targetUrl = params.get('url');
+    if (!targetUrl) return send(res, 400, { error: 'Missing url parameter' });
+    
+    try {
+      const targetParsed = new URL(targetUrl);
+      // Block localhost/internal requests for security
+      if (['localhost', '127.0.0.1', '0.0.0.0'].includes(targetParsed.hostname)) {
+        return send(res, 403, { error: 'Cannot proxy localhost' });
+      }
+      
+      const upstream = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'identity'
+        },
+        redirect: 'follow'
+      });
+      
+      const contentType = upstream.headers.get('content-type') || 'text/html';
+      
+      // For HTML pages, rewrite relative URLs and inject base tag
+      if (contentType.includes('text/html')) {
+        let html = await upstream.text();
+        const base = targetParsed.origin;
+        
+        // Inject <base> tag so relative URLs resolve correctly
+        if (/<head[^>]*>/i.test(html)) {
+          html = html.replace(/<head[^>]*>/i, '$&<base href="' + base + '/">');
+        } else {
+          html = '<base href="' + base + '/">' + html;
+        }
+        
+        // Rewrite links to go through proxy
+        html = html.replace(/(href|src|action)=["']\/(?!\/)/gi, '$1="' + base + '/');
+        
+        // Inject script to intercept navigation and route through proxy
+        const proxyScript = `<script>
+        document.addEventListener('click', function(e) {
+          var a = e.target.closest('a');
+          if (a && a.href && !a.href.startsWith('javascript:')) {
+            e.preventDefault();
+            var url = a.href;
+            if (url.startsWith('/proxy?')) return;
+            window.parent.postMessage({ type: 'stellar-navigate', url: url }, '*');
+          }
+        }, true);
+        document.addEventListener('submit', function(e) {
+          var form = e.target;
+          if (form.tagName === 'FORM' && form.action) {
+            e.preventDefault();
+            var fd = new FormData(form);
+            var qs = new URLSearchParams(fd).toString();
+            var url = form.action + (form.method.toLowerCase() === 'get' ? '?' + qs : '');
+            window.parent.postMessage({ type: 'stellar-navigate', url: url }, '*');
+          }
+        }, true);
+        </script>`;
+        html = html.replace(/<\/body>/i, proxyScript + '</body>');
+        
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'access-control-allow-origin': '*'
+        });
+        return res.end(html);
+      }
+      
+      // For non-HTML (images, CSS, JS, etc.), pipe through directly
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      res.writeHead(upstream.status, {
+        'content-type': contentType,
+        'access-control-allow-origin': '*',
+        'cache-control': 'public, max-age=3600'
+      });
+      return res.end(buf);
+      
+    } catch (e) {
+      return send(res, 502, { error: 'Proxy error: ' + e.message });
     }
   }
 
