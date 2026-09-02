@@ -402,22 +402,26 @@ async function handleChat(req, res) {
   if (needsSearch && lastText.length > 5) {
     try {
       const q = encodeURIComponent(typeof lastMsg.content === 'string' ? lastMsg.content.slice(0, 150) : '');
+      const controller = new AbortController();
+      const searchTimeout = setTimeout(() => controller.abort(), 2000); // 2 second max
       const sr = await fetch('https://api.duckduckgo.com/?q=' + q + '&format=json&no_html=1&skip_disambig=1', {
-        headers: { 'User-Agent': 'MistBot/1.0' }
+        headers: { 'User-Agent': 'MistBot/1.0' },
+        signal: controller.signal
       });
+      clearTimeout(searchTimeout);
       if (sr.ok) {
         const sj = await sr.json();
         const results = [];
         if (sj.Abstract) results.push(sj.Abstract);
         if (sj.Answer) results.push(sj.Answer);
         if (sj.RelatedTopics) {
-          sj.RelatedTopics.slice(0, 5).forEach(t => { if (t.Text) results.push(t.Text); });
+          sj.RelatedTopics.slice(0, 3).forEach(t => { if (t.Text) results.push(t.Text); });
         }
         if (results.length > 0) {
-          searchContext = '\n\n[Web search results for context - use these to give current/accurate info]:\n' + results.join('\n');
+          searchContext = '\n\n[Web search results]:\n' + results.join('\n');
         }
       }
-    } catch (e) { /* search failed silently, continue without it */ }
+    } catch (e) { /* search failed or timed out — continue without it */ }
   }
 
   const system = basePrompt + '\n\nToday\'s date is ' + dateStr + '. Always use this as the current date when asked.' + searchContext;
