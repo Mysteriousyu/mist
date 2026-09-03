@@ -396,28 +396,7 @@ async function handleChat(req, res) {
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   // Quick web search — only if the question needs current info, hard 1.5s timeout
-  let searchContext = '';
-  const lastMsg = messages[messages.length - 1];
-  const lastText = (typeof lastMsg?.content === 'string' ? lastMsg.content : '').toLowerCase();
-  const needsSearch = /(today|latest|recent|current|news|weather|score|price|update|who won|what happened|right now|this week|this month|2025|2026)/i.test(lastText);
-
-  if (needsSearch && lastText.length > 8) {
-    try {
-      const q = encodeURIComponent(typeof lastMsg.content === 'string' ? lastMsg.content.slice(0, 100) : '');
-      const sr = await fetch('https://api.duckduckgo.com/?q=' + q + '&format=json&no_html=1&skip_disambig=1', {
-        signal: AbortSignal.timeout(1500)
-      });
-      if (sr.ok) {
-        const sj = await sr.json();
-        const bits = [];
-        if (sj.Abstract) bits.push(sj.Abstract);
-        if (sj.Answer) bits.push(sj.Answer);
-        if (bits.length) searchContext = '\n\n[Web info]: ' + bits.join(' ');
-      }
-    } catch { /* timed out or failed — continue without search */ }
-  }
-
-  const system = basePrompt + '\n\nToday is ' + dateStr + '.' + searchContext;
+  const system = basePrompt + '\n\nToday is ' + dateStr + '.';
   const meta = { chatId: body.chatId, title: body.title, assistant };
 
   for (let i = 0; i < targets.length; i++) {
