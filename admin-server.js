@@ -123,10 +123,10 @@ function blankData() {
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
         codingChain: [
-          { provider: 'cerebras', model: 'llama-3.3-70b' },
           { provider: 'groq', model: 'llama-3.3-70b-versatile' },
           { provider: 'together', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
           { provider: 'mistral', model: 'mistral-large-latest' },
+          { provider: 'nim', model: 'google/gemma-4-31b-it' },
           { provider: 'anthropic', model: 'claude-fable-5-1' }
         ],
         multimodalChain: [
