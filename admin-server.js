@@ -95,6 +95,8 @@ function blankData() {
       fireworks:  { label: 'Fireworks AI',     format: 'openai',    baseUrl: 'https://api.fireworks.ai/inference/v1/chat/completions', apiKey: '',
                     models: ['accounts/fireworks/models/llama-v3p3-70b-instruct', 'accounts/fireworks/models/mixtral-8x22b-instruct'] },
       openrouter: { label: 'OpenRouter',       format: 'openai',    baseUrl: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '' },
+      vercel:     { label: 'Vercel AI',        format: 'openai',    baseUrl: 'https://api.vercel.ai/v1/chat/completions', apiKey: '',
+                    models: ['claude-opus-4-8', 'claude-sonnet-4-6', 'gpt-4o', 'gpt-4o-mini'] },
       cohere:     { label: 'Cohere',           format: 'openai',    baseUrl: 'https://api.cohere.com/v2/chat', apiKey: '',
                     models: ['command-r-plus', 'command-r', 'command-light'] },
       sambanova:  { label: 'SambaNova',        format: 'openai',    baseUrl: 'https://api.sambanova.ai/v1/chat/completions', apiKey: '',
@@ -121,6 +123,7 @@ function blankData() {
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
         codingChain: [
+          { provider: 'vercel', model: 'claude-opus-4-8' },
           { provider: 'anthropic', model: 'claude-fable-5-1' },
           { provider: 'cerebras', model: 'llama-3.3-70b' },
           { provider: 'together', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
