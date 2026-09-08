@@ -116,21 +116,19 @@ function blankData() {
     routing: {
       pluto: { provider: 'groq', model: 'openai/gpt-oss-20b', fallbacks: [
         { provider: 'groq', model: 'openai/gpt-oss-120b' },
-        { provider: 'sambanova', model: 'Meta-Llama-3.3-70B-Instruct' },
-        { provider: 'cerebras', model: 'llama-3.3-70b' },
-        { provider: 'together', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
-        { provider: 'pollinations', model: 'openai' }
+        { provider: 'pollinations', model: 'openai' },
+        { provider: 'pollinations', model: 'mistral' },
+        { provider: 'pollinations', model: 'llama' }
       ] },
       /* Mist 2 has two chains:
          - codingChain: used for plain text / coding (up to 6 keys)
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
         codingChain: [
+          { provider: 'anthropic', model: 'claude-fable-5-1' },
           { provider: 'openai', model: 'gpt-6-astra' },
           { provider: 'openai', model: 'gpt-5.6-sol' },
-          { provider: 'openai', model: 'gpt-5.6-terra' },
           { provider: 'openai', model: 'gpt-4o' },
-          { provider: 'openai', model: 'gpt-4o-mini' },
           { provider: 'groq', model: 'openai/gpt-oss-120b' },
           { provider: 'pollinations', model: 'openai' }
         ],
@@ -144,8 +142,8 @@ function blankData() {
          happens via /api/generate route, using stability/replicate. */
       omni: { provider: 'gemini', model: 'gemini-2.0-flash', fallbacks: [
         { provider: 'openai', model: 'gpt-4o' },
-        { provider: 'mistral', model: 'mistral-large-latest' },
-        { provider: 'cerebras', model: 'llama-3.3-70b' }
+        { provider: 'pollinations', model: 'openai' },
+        { provider: 'pollinations', model: 'mistral' }
       ] }
     },
     /* Custom system prompts — leave blank to use built-in prompts */
@@ -260,7 +258,7 @@ function buildUpstream(providerCfg, model, system, messages) {
       init: {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model, stream: true, max_tokens: 2048, system, messages })
+        body: JSON.stringify({ model, stream: true, max_tokens: 1024, system, messages })
       }
     };
   }
@@ -285,7 +283,7 @@ function buildUpstream(providerCfg, model, system, messages) {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
       body: JSON.stringify({
-        model, stream: true, max_tokens: 2048, temperature: 0.7,
+        model, stream: true, max_tokens: 1024, temperature: 0.7,
         messages: [{ role: 'system', content: system }, ...messages]
       })
     }
@@ -392,7 +390,60 @@ async function handleChat(req, res) {
   user.messages++;
 
   const assistant = ['pluto','sonar','omni'].includes(body.assistant) ? body.assistant : 'pluto';
-  const messages = body.messages.slice(-24);
+  const messages = body.messages.slice(-8);
+  
+  // Detect if user wants web search (clicked Web pill or needs current info)
+  const lastMsg = messages[messages.length - 1];
+  const lastText = (typeof lastMsg?.content === 'string' ? lastMsg.content : '').toLowerCase();
+  const wantsWeb = body.webSearch === true || /(today|latest|recent|current|news|weather|score|price|update|who won|what happened|right now|this week|this month|2025|2026|search|look up|find out)/i.test(lastText);
+  
+  // If web search needed AND we have a Gemini key, route through Gemini (has Google Search built in)
+  const geminiKey = keyFor('gemini');
+  if (wantsWeb && geminiKey) {
+    const geminiCfg = Object.assign({}, DB.providers.gemini, { apiKey: geminiKey });
+    const geminiModel = 'gemini-2.0-flash';
+    const customPrompt = (DB.systemPrompts || {})[assistant];
+    const basePrompt = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (body.system || 'You are a helpful assistant.');
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const system = basePrompt + '\n\nToday is ' + dateStr + '. You have access to Google Search. Use it to find current, accurate information.';
+    const meta = { chatId: body.chatId, title: body.title, assistant };
+    
+    const { url, init } = buildUpstream(geminiCfg, geminiModel, system, messages);
+    try {
+      init.signal = AbortSignal.timeout(30000);
+      const upstream = await fetch(url, init);
+      if (upstream.ok && upstream.body) {
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'x-model-used': geminiModel, 'x-search': 'google' });
+        const reader = upstream.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '', full = '';
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const events = buf.split('\n\n'); buf = events.pop();
+            for (const ev of events) {
+              for (const line of ev.split('\n')) {
+                if (!line.startsWith('data:')) continue;
+                const data = line.slice(5).trim();
+                if (!data || data === '[DONE]') continue;
+                const piece = extractDelta('gemini', data);
+                if (piece) { full += piece; res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: piece } }] }) + '\n\n'); }
+              }
+            }
+          }
+        } catch {}
+        res.write('data: [DONE]\n\n');
+        res.end();
+        recordChat(userId, meta, messages, full);
+        return;
+      }
+    } catch (e) { console.error('Gemini web search failed:', e.message); }
+    // If Gemini fails, fall through to normal routing below
+  }
+
   const targets = resolveTargets(assistant, messages);
   if (!targets.length) return send(res, 503, { error: 'No API key configured for ' + assistant + '. Set one in the admin console → Keys & Models.' });
 
@@ -400,8 +451,6 @@ async function handleChat(req, res) {
   const basePrompt = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (body.system || 'You are a helpful assistant.');
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-  // Quick web search — only if the question needs current info, hard 1.5s timeout
   const system = basePrompt + '\n\nToday is ' + dateStr + '.';
   const meta = { chatId: body.chatId, title: body.title, assistant };
 

@@ -1211,7 +1211,7 @@ async function streamChat({ assistant, messages, system, signal, onDelta, meta }
       headers: { 'content-type': 'application/json', 'x-mist-user': S.userId },
       body: JSON.stringify(Object.assign({
         assistant, model: S.config.models[assistant], messages, system, stream: true,
-        userId: S.userId
+        userId: S.userId, webSearch: S.activeTool === 'web'
       }, meta || {})),
       signal
     });
@@ -1374,7 +1374,7 @@ async function run(chat) {
       chat.messages.push({
         id: uid(), role: 'error', ts: now(),
         title: 'No model server connected',
-        content: 'Mist tried `' + (S.config.endpoint || '/api/chat') + '` and nothing answered. Keys are deliberately kept off the browser, so chat needs one small server route. Open Admin console → Deploy, add functions/api/chat.js to your Cloudflare Pages project with your model keys as environment variables — after that nobody who visits ever enters a key.'
+        content: 'Mist tried `' + (S.config.endpoint || '/api/chat') + '` and nothing answered. Check that your Render service is running and API keys are set in the admin console (go to /admin). If the server just woke up from sleep, try again in 30 seconds.'
       });
     } else {
       chat.messages = chat.messages.filter(m => m.id !== msg.id || msg.content.trim());
@@ -2161,7 +2161,7 @@ async function studioBuild() {
   } catch (e) {
     if (e.name !== 'AbortError') {
       const msg = e.message === 'NO_BACKEND'
-        ? 'No model server answered at ' + S.config.endpoint + '. Add the Cloudflare function from Admin console → Deploy, or pick a model that uses your own key.'
+        ? 'No model server answered at ' + S.config.endpoint + '. Check that your Render service is running and API keys are configured in the admin console.'
         : e.message;
       $('#studioPreview').srcdoc = '<body style="font:15px/1.6 system-ui;padding:28px;color:#b3311a">' + esc(msg) + '</body>';
       toast('Build failed');
