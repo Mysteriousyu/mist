@@ -75,7 +75,7 @@ function blankData() {
       anthropic:  { label: 'Anthropic (Claude)',format: 'anthropic', baseUrl: '', apiKey: '',
                     models: ['claude-fable-5-1', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] },
       gemini:     { label: 'Google Gemini',    format: 'gemini',    baseUrl: '', apiKey: '',
-                    models: ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
+                    models: ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
       xai:        { label: 'xAI (Grok)',       format: 'openai',    baseUrl: 'https://api.x.ai/v1/chat/completions', apiKey: '',
                     models: ['grok-4.5', 'grok-3', 'grok-3-mini', 'grok-2'] },
       mistral:    { label: 'Mistral',          format: 'openai',    baseUrl: 'https://api.mistral.ai/v1/chat/completions', apiKey: '',
@@ -97,40 +97,48 @@ function blankData() {
       openrouter: { label: 'OpenRouter',       format: 'openai',    baseUrl: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '' },
       vercel:     { label: 'Vercel AI',        format: 'openai',    baseUrl: 'https://api.vercel.ai/v1/chat/completions', apiKey: '',
                     models: ['claude-opus-4-8', 'claude-sonnet-4-6', 'gpt-4o', 'gpt-4o-mini'] },
+      xplabs:     { label: 'Experiential Labs', format: 'openai',   baseUrl: 'https://api.xplabs.ai/v1/chat/completions', apiKey: '',
+                    models: ['gpt-6-astra', 'gpt-5.6-sol', 'claude-fable-5-1', 'claude-sonnet-4-6', 'gpt-4o'] },
       cohere:     { label: 'Cohere',           format: 'openai',    baseUrl: 'https://api.cohere.com/v2/chat', apiKey: '',
                     models: ['command-r-plus', 'command-r', 'command-light'] },
       sambanova:  { label: 'SambaNova',        format: 'openai',    baseUrl: 'https://api.sambanova.ai/v1/chat/completions', apiKey: '',
                     models: ['Meta-Llama-3.3-70B-Instruct', 'Meta-Llama-3.1-8B-Instruct'] },
-      cerebras:   { label: 'Cerebras (⚡ FAST)',format: 'openai',    baseUrl: 'https://api.cerebras.ai/v1/chat/completions', apiKey: '', 
-                    models: ['llama-3.3-70b', 'llama-3.1-8b', 'llama-3.1-70b'] },
+      cerebras:   { label: 'Cerebras (⚡ 2000 tok/s)',format: 'openai',    baseUrl: 'https://api.cerebras.ai/v1/chat/completions', apiKey: '', 
+                    models: ['llama-3.3-70b', 'qwen/qwen3-32b', 'qwen/qwen3-235b'] },
       lepton:     { label: 'Lepton AI',        format: 'openai',    baseUrl: 'https://llama3-2-3b.lepton.run/api/v1/chat/completions', apiKey: '' },
       ai21:       { label: 'AI21 (Jamba)',     format: 'openai',    baseUrl: 'https://api.ai21.com/studio/v1/chat/completions', apiKey: '',
                     models: ['jamba-1.5-large', 'jamba-1.5-mini'] },
+      minimax:    { label: 'MiniMax',          format: 'openai',    baseUrl: 'https://api.minimaxi.chat/v1/chat/completions', apiKey: '',
+                    models: ['MiniMax-M3', 'MiniMax-M1'] },
       /* Image/video providers for Omni */
+      elevenlabs: { label: 'ElevenLabs (🎨 images+video)', format: 'openai', baseUrl: 'https://api.elevenlabs.io/v1', apiKey: '',
+                    models: ['flux-kontext', 'gpt-image', 'seedream', 'nanobanana'] },
       stability:  { label: 'Stability AI (images)', format: 'stability', baseUrl: 'https://api.stability.ai/v2beta/stable-image/generate/core', apiKey: '' },
       fal:        { label: 'Fal.ai (⚡ FAST images)', format: 'openai', baseUrl: 'https://queue.fal.run/fal-ai/fast-sdxl', apiKey: '' },
       replicate:  { label: 'Replicate (images/video)', format: 'replicate', baseUrl: 'https://api.replicate.com/v1/predictions', apiKey: '' },
       /* Free fallback — no API key needed */
-      pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/openai/v1/chat/completions', apiKey: 'free', models: ['openai', 'mistral', 'llama'] }
+      pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/openai', apiKey: 'free', models: ['openai', 'mistral', 'llama'] }
     },
     routing: {
       pluto: { provider: 'groq', model: 'openai/gpt-oss-20b', fallbacks: [
         { provider: 'groq', model: 'openai/gpt-oss-120b' },
-        { provider: 'pollinations', model: 'openai' },
-        { provider: 'pollinations', model: 'mistral' },
-        { provider: 'pollinations', model: 'llama' }
+        { provider: 'cerebras', model: 'llama-3.3-70b' },
+        { provider: 'gemini', model: 'gemini-3.8-flash' },
+        { provider: 'gemini', model: 'gemini-2.0-flash' },
+        { provider: 'pollinations', model: 'openai' }
       ] },
       /* Mist 2 has two chains:
          - codingChain: used for plain text / coding (up to 6 keys)
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
         codingChain: [
+          { provider: 'xplabs', model: 'gpt-6-astra' },
           { provider: 'anthropic', model: 'claude-fable-5-1' },
-          { provider: 'openai', model: 'gpt-6-astra' },
-          { provider: 'openai', model: 'gpt-5.6-sol' },
-          { provider: 'openai', model: 'gpt-4o' },
-          { provider: 'groq', model: 'openai/gpt-oss-120b' },
-          { provider: 'pollinations', model: 'openai' }
+          { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+          { provider: 'gemini', model: 'gemini-3.8-flash' },
+          { provider: 'gemini', model: 'gemini-2.0-flash' },
+          { provider: 'pollinations', model: 'openai' },
+          { provider: 'minimax', model: 'MiniMax-M3' }
         ],
         multimodalChain: [
           { provider: 'gemini', model: 'gemini-2.0-flash' },
@@ -140,10 +148,10 @@ function blankData() {
       },
       /* Mist 3 is a chat model that crafts prompts. The actual image generation
          happens via /api/generate route, using stability/replicate. */
-      omni: { provider: 'gemini', model: 'gemini-2.0-flash', fallbacks: [
-        { provider: 'openai', model: 'gpt-4o' },
-        { provider: 'pollinations', model: 'openai' },
-        { provider: 'pollinations', model: 'mistral' }
+      omni: { provider: 'gemini', model: 'gemini-3.8-flash', fallbacks: [
+        { provider: 'gemini', model: 'gemini-2.0-flash' },
+        { provider: 'groq', model: 'openai/gpt-oss-120b' },
+        { provider: 'pollinations', model: 'openai' }
       ] }
     },
     /* Custom system prompts — leave blank to use built-in prompts */
@@ -390,68 +398,30 @@ async function handleChat(req, res) {
   user.messages++;
 
   const assistant = ['pluto','sonar','omni'].includes(body.assistant) ? body.assistant : 'pluto';
-  const messages = body.messages.slice(-8);
+  const messages = body.messages.slice(-8).map(m => {
+    // Truncate very long messages to prevent token limit errors
+    if (typeof m.content === 'string' && m.content.length > 4000) {
+      return { role: m.role, content: m.content.slice(0, 4000) + '\n\n[Content truncated for length]' };
+    }
+    return m;
+  });
   
-  // Detect if user wants web search (clicked Web pill or needs current info)
-  const lastMsg = messages[messages.length - 1];
-  const lastText = (typeof lastMsg?.content === 'string' ? lastMsg.content : '').toLowerCase();
-  const wantsWeb = body.webSearch === true || /(today|latest|recent|current|news|weather|score|price|update|who won|what happened|right now|this week|this month|2025|2026|search|look up|find out)/i.test(lastText);
-  
-  // If web search needed AND we have a Gemini key, route through Gemini (has Google Search built in)
-  const geminiKey = keyFor('gemini');
-  if (wantsWeb && geminiKey) {
-    const geminiCfg = Object.assign({}, DB.providers.gemini, { apiKey: geminiKey });
-    const geminiModel = 'gemini-2.0-flash';
-    const customPrompt = (DB.systemPrompts || {})[assistant];
-    const basePrompt = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (body.system || 'You are a helpful assistant.');
-    const today = new Date();
-    const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const system = basePrompt + '\n\nToday is ' + dateStr + '. You have access to Google Search. Use it to find current, accurate information.';
-    const meta = { chatId: body.chatId, title: body.title, assistant };
-    
-    const { url, init } = buildUpstream(geminiCfg, geminiModel, system, messages);
-    try {
-      init.signal = AbortSignal.timeout(30000);
-      const upstream = await fetch(url, init);
-      if (upstream.ok && upstream.body) {
-        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'x-model-used': geminiModel, 'x-search': 'google' });
-        const reader = upstream.body.getReader();
-        const dec = new TextDecoder();
-        let buf = '', full = '';
-        try {
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buf += dec.decode(value, { stream: true });
-            const events = buf.split('\n\n'); buf = events.pop();
-            for (const ev of events) {
-              for (const line of ev.split('\n')) {
-                if (!line.startsWith('data:')) continue;
-                const data = line.slice(5).trim();
-                if (!data || data === '[DONE]') continue;
-                const piece = extractDelta('gemini', data);
-                if (piece) { full += piece; res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: piece } }] }) + '\n\n'); }
-              }
-            }
-          }
-        } catch {}
-        res.write('data: [DONE]\n\n');
-        res.end();
-        recordChat(userId, meta, messages, full);
-        return;
-      }
-    } catch (e) { console.error('Gemini web search failed:', e.message); }
-    // If Gemini fails, fall through to normal routing below
+  // If web search requested, add Gemini (with Google Search) as first target
+  const wantsWeb = body.webSearch === true;
+  let targets;
+  if (wantsWeb && keyFor('gemini')) {
+    const geminiCfg = Object.assign({}, DB.providers.gemini || {}, { apiKey: keyFor('gemini'), format: 'gemini' });
+    targets = [{ providerCfg: geminiCfg, model: 'gemini-2.0-flash' }, ...resolveTargets(assistant, messages)];
+  } else {
+    targets = resolveTargets(assistant, messages);
   }
-
-  const targets = resolveTargets(assistant, messages);
   if (!targets.length) return send(res, 503, { error: 'No API key configured for ' + assistant + '. Set one in the admin console → Keys & Models.' });
 
   const customPrompt = (DB.systemPrompts || {})[assistant];
   const basePrompt = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (body.system || 'You are a helpful assistant.');
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const system = basePrompt + '\n\nToday is ' + dateStr + '.';
+  const system = basePrompt + '\n\nToday is ' + dateStr + '.' + (wantsWeb ? ' Search the web for current information to answer accurately.' : '');
   const meta = { chatId: body.chatId, title: body.title, assistant };
 
   for (let i = 0; i < targets.length; i++) {
@@ -783,6 +753,8 @@ async function handleGenerate(req, res) {
   const user = touchUser(userId);
   if (user.banned) return send(res, 403, { error: 'Suspended' });
 
+  const minimaxKey  = keyFor('minimax');
+  const elevenlabsKey = keyFor('elevenlabs');
   const togetherKey = keyFor('together');
   const openaiKey   = keyFor('openai');
   const geminiKey   = keyFor('gemini');
@@ -790,6 +762,89 @@ async function handleGenerate(req, res) {
   const stabKey     = keyFor('stability');
   const repKey      = keyFor('replicate');
   const hfKey       = keyFor('huggingface');
+
+  // ==================== TOP PRIORITY: MiniMax H3 ====================
+
+  // 0. MiniMax H3 — frontier video/image generation
+  if (minimaxKey) {
+    try {
+      const r = await fetch('https://api.minimaxi.chat/v1/video_generation', {
+        method: 'POST',
+        headers: { 'authorization': 'Bearer ' + minimaxKey, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'MiniMax-H3',
+          prompt: body.prompt,
+          resolution: '768P',
+          duration: 5
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+      if (r.ok) {
+        const j = await r.json();
+        // H3 returns a task_id for async generation
+        if (j.task_id) {
+          // Poll for completion (max 90 seconds)
+          for (let i = 0; i < 18; i++) {
+            await new Promise(r => setTimeout(r, 5000));
+            const check = await fetch('https://api.minimaxi.chat/v1/query/video_generation/' + j.task_id, {
+              headers: { 'authorization': 'Bearer ' + minimaxKey },
+              signal: AbortSignal.timeout(10000)
+            });
+            if (check.ok) {
+              const s = await check.json();
+              if (s.status === 'Success' || s.status === 'success') {
+                const url = s.file_id || (s.content && s.content.url) || (s.task && s.task.content && s.task.content.url);
+                if (url) return send(res, 200, { image: url, provider: 'minimax-h3', type: 'video' });
+              }
+              if (s.status === 'Failed' || s.status === 'failed') break;
+            }
+          }
+        }
+        // Direct image response
+        if (j.data && j.data[0]) {
+          const img = j.data[0].url || j.data[0];
+          if (img) return send(res, 200, { image: img, provider: 'minimax-h3' });
+        }
+      } else {
+        console.error('MiniMax H3 error:', (await r.text().catch(() => '')).slice(0, 300));
+      }
+    } catch (e) { console.error('MiniMax H3 failed:', e.message); }
+  }
+
+  // ==================== TOP PRIORITY: ElevenLabs ====================
+
+  // 1. ElevenLabs Image & Video (Beta) — supports Flux Kontext, GPT Image, Seedream, Nanobanana
+  if (elevenlabsKey) {
+    try {
+      const r = await fetch('https://api.elevenlabs.io/v1/images/generate', {
+        method: 'POST',
+        headers: { 'xi-api-key': elevenlabsKey, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: body.prompt,
+          model_id: body.imageModel || 'flux-kontext',
+          n: 1,
+          size: '1024x1024'
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (r.ok) {
+        const j = await r.json();
+        // Handle various response formats
+        if (j.images && j.images[0]) {
+          const img = j.images[0].url || j.images[0].base64 || j.images[0];
+          const imgUrl = typeof img === 'string' && img.startsWith('http') ? img : (typeof img === 'string' ? 'data:image/png;base64,' + img : null);
+          if (imgUrl) return send(res, 200, { image: imgUrl, provider: 'elevenlabs' });
+        }
+        if (j.data && j.data[0]) {
+          const img = j.data[0].url || j.data[0].b64_json;
+          if (img) return send(res, 200, { image: img.startsWith('http') ? img : 'data:image/png;base64,' + img, provider: 'elevenlabs' });
+        }
+        if (j.image) return send(res, 200, { image: j.image, provider: 'elevenlabs' });
+      } else {
+        console.error('ElevenLabs image error:', (await r.text().catch(() => '')).slice(0, 300));
+      }
+    } catch (e) { console.error('ElevenLabs image failed:', e.message); }
+  }
 
   // ==================== FREE PROVIDERS (no key / no credits needed) ====================
 
@@ -1523,7 +1578,7 @@ function renderKeys(){
     +'<label style="font-weight:600;font-size:12px">Chat model (crafts prompts)</label>'
     +'<select id="m3-p" style="margin-bottom:4px">'+provOpts(r3.provider)+'</select>'
     +m3ModelInput
-    +'<label style="font-weight:600;font-size:12px">Image provider (Stability, Replicate, Fal.ai, or HuggingFace key above)</label>'
+    +'<label style="font-weight:600;font-size:12px">Image provider (ElevenLabs, Stability, Replicate, Fal.ai, or HuggingFace)</label>'
     +'<p class="muted" style="font-size:11.5px;margin:2px 0 0">'+(P.stability && P.stability.hasKey ? '<span class="badge ok">Stability ready</span>' : P.replicate && P.replicate.hasKey ? '<span class="badge ok">Replicate ready</span>' : P.fal && P.fal.hasKey ? '<span class="badge ok">Fal.ai ready</span>' : P.huggingface && P.huggingface.hasKey ? '<span class="badge ok">HuggingFace ready</span>' : '<span class="badge no">Add a Stability, Replicate, Fal.ai, or HuggingFace key above</span>')+'</p>'
     +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM3">Save Omni</button></div>';
   html+='</div>';
