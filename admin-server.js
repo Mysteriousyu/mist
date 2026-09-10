@@ -106,7 +106,7 @@ function blankData() {
       sambanova:  { label: 'SambaNova',        format: 'openai',    baseUrl: 'https://api.sambanova.ai/v1/chat/completions', apiKey: '',
                     models: ['Meta-Llama-3.3-70B-Instruct', 'Meta-Llama-3.1-8B-Instruct'] },
       cerebras:   { label: 'Cerebras (⚡ 2000 tok/s)',format: 'openai',    baseUrl: 'https://api.cerebras.ai/v1/chat/completions', apiKey: '', 
-                    models: ['llama-3.3-70b', 'qwen/qwen3-32b', 'qwen/qwen3-235b'] },
+                    models: ['gpt-oss-120b', 'llama3.1-8b'] },
       lepton:     { label: 'Lepton AI',        format: 'openai',    baseUrl: 'https://llama3-2-3b.lepton.run/api/v1/chat/completions', apiKey: '' },
       ai21:       { label: 'AI21 (Jamba)',     format: 'openai',    baseUrl: 'https://api.ai21.com/studio/v1/chat/completions', apiKey: '',
                     models: ['jamba-1.5-large', 'jamba-1.5-mini'] },
@@ -124,7 +124,7 @@ function blankData() {
     routing: {
       pluto: { provider: 'groq', model: 'openai/gpt-oss-20b', fallbacks: [
         { provider: 'groq', model: 'openai/gpt-oss-120b' },
-        { provider: 'cerebras', model: 'llama-3.3-70b' },
+        { provider: 'cerebras', model: 'gpt-oss-120b' },
         { provider: 'gemini', model: 'gemini-3.8-flash' },
         { provider: 'gemini', model: 'gemini-3.6-flash' },
         { provider: 'pollinations', model: 'openai' }
@@ -134,11 +134,11 @@ function blankData() {
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
         codingChain: [
+          { provider: 'cometapi', model: 'claude-fable-5-1' },
+          { provider: 'cometapi', model: 'gpt-6-astra' },
           { provider: 'cometapi', model: 'minimax-m3' },
-          { provider: 'minimax', model: 'MiniMax-M3' },
-          { provider: 'cerebras', model: 'llama-3.3-70b' },
+          { provider: 'cerebras', model: 'gpt-oss-120b' },
           { provider: 'gemini', model: 'gemini-3.8-flash' },
-          { provider: 'groq', model: 'openai/gpt-oss-120b' },
           { provider: 'pollinations', model: 'openai' }
         ],
         multimodalChain: [
