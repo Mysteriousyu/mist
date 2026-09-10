@@ -75,7 +75,7 @@ function blankData() {
       anthropic:  { label: 'Anthropic (Claude)',format: 'anthropic', baseUrl: '', apiKey: '',
                     models: ['claude-fable-5-1', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] },
       gemini:     { label: 'Google Gemini',    format: 'gemini',    baseUrl: '', apiKey: '',
-                    models: ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
+                    models: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.6-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
       xai:        { label: 'xAI (Grok)',       format: 'openai',    baseUrl: 'https://api.x.ai/v1/chat/completions', apiKey: '',
                     models: ['grok-4.5', 'grok-3', 'grok-3-mini', 'grok-2'] },
       mistral:    { label: 'Mistral',          format: 'openai',    baseUrl: 'https://api.mistral.ai/v1/chat/completions', apiKey: '',
@@ -97,8 +97,10 @@ function blankData() {
       openrouter: { label: 'OpenRouter',       format: 'openai',    baseUrl: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '' },
       vercel:     { label: 'Vercel AI',        format: 'openai',    baseUrl: 'https://api.vercel.ai/v1/chat/completions', apiKey: '',
                     models: ['claude-opus-4-8', 'claude-sonnet-4-6', 'gpt-4o', 'gpt-4o-mini'] },
-      xplabs:     { label: 'Experiential Labs', format: 'openai',   baseUrl: 'https://api.xplabs.ai/v1/chat/completions', apiKey: '',
-                    models: ['gpt-6-astra', 'gpt-5.6-sol', 'claude-fable-5-1', 'claude-sonnet-4-6', 'gpt-4o'] },
+      xplabs:     { label: 'Experiential Labs', format: 'openai',   baseUrl: 'https://api.experientiallabs.ai/v1/chat/completions', apiKey: '',
+                    models: ['gpt-6-astra', 'fable-5', 'gpt-5.6-sol', 'gpt-5.6', 'haiku-4.5', 'gemini-3.7-flash'] },
+      cometapi:   { label: 'CometAPI (500+ models)', format: 'openai', baseUrl: 'https://api.cometapi.com/v1/chat/completions', apiKey: '',
+                    models: ['gpt-6-astra', 'claude-opus-5', 'claude-fable-5-1', 'gpt-5.6-sol', 'minimax-m3', 'gemini-3.8-flash', 'grok-4.5', 'deepseek-r1'] },
       cohere:     { label: 'Cohere',           format: 'openai',    baseUrl: 'https://api.cohere.com/v2/chat', apiKey: '',
                     models: ['command-r-plus', 'command-r', 'command-light'] },
       sambanova:  { label: 'SambaNova',        format: 'openai',    baseUrl: 'https://api.sambanova.ai/v1/chat/completions', apiKey: '',
@@ -108,8 +110,8 @@ function blankData() {
       lepton:     { label: 'Lepton AI',        format: 'openai',    baseUrl: 'https://llama3-2-3b.lepton.run/api/v1/chat/completions', apiKey: '' },
       ai21:       { label: 'AI21 (Jamba)',     format: 'openai',    baseUrl: 'https://api.ai21.com/studio/v1/chat/completions', apiKey: '',
                     models: ['jamba-1.5-large', 'jamba-1.5-mini'] },
-      minimax:    { label: 'MiniMax',          format: 'openai',    baseUrl: 'https://api.minimaxi.chat/v1/chat/completions', apiKey: '',
-                    models: ['MiniMax-M3', 'MiniMax-M1'] },
+      minimax:    { label: 'MiniMax',          format: 'openai',    baseUrl: 'https://api.minimax.io/v1/chat/completions', apiKey: '',
+                    models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.5'] },
       /* Image/video providers for Omni */
       elevenlabs: { label: 'ElevenLabs (🎨 images+video)', format: 'openai', baseUrl: 'https://api.elevenlabs.io/v1', apiKey: '',
                     models: ['flux-kontext', 'gpt-image', 'seedream', 'nanobanana'] },
@@ -117,14 +119,14 @@ function blankData() {
       fal:        { label: 'Fal.ai (⚡ FAST images)', format: 'openai', baseUrl: 'https://queue.fal.run/fal-ai/fast-sdxl', apiKey: '' },
       replicate:  { label: 'Replicate (images/video)', format: 'replicate', baseUrl: 'https://api.replicate.com/v1/predictions', apiKey: '' },
       /* Free fallback — no API key needed */
-      pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/openai', apiKey: 'free', models: ['openai', 'mistral', 'llama'] }
+      pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/v1/chat/completions', apiKey: 'dummy', models: ['openai', 'mistral', 'llama'] }
     },
     routing: {
       pluto: { provider: 'groq', model: 'openai/gpt-oss-20b', fallbacks: [
         { provider: 'groq', model: 'openai/gpt-oss-120b' },
         { provider: 'cerebras', model: 'llama-3.3-70b' },
         { provider: 'gemini', model: 'gemini-3.8-flash' },
-        { provider: 'gemini', model: 'gemini-2.0-flash' },
+        { provider: 'gemini', model: 'gemini-3.6-flash' },
         { provider: 'pollinations', model: 'openai' }
       ] },
       /* Mist 2 has two chains:
@@ -132,16 +134,15 @@ function blankData() {
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
         codingChain: [
-          { provider: 'xplabs', model: 'gpt-6-astra' },
-          { provider: 'anthropic', model: 'claude-fable-5-1' },
-          { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+          { provider: 'cometapi', model: 'minimax-m3' },
+          { provider: 'minimax', model: 'MiniMax-M3' },
+          { provider: 'cerebras', model: 'llama-3.3-70b' },
           { provider: 'gemini', model: 'gemini-3.8-flash' },
-          { provider: 'gemini', model: 'gemini-2.0-flash' },
-          { provider: 'pollinations', model: 'openai' },
-          { provider: 'minimax', model: 'MiniMax-M3' }
+          { provider: 'groq', model: 'openai/gpt-oss-120b' },
+          { provider: 'pollinations', model: 'openai' }
         ],
         multimodalChain: [
-          { provider: 'gemini', model: 'gemini-2.0-flash' },
+          { provider: 'gemini', model: 'gemini-3.6-flash' },
           { provider: 'openai', model: 'gpt-4o' }
         ],
         fallbacks: []
@@ -149,7 +150,7 @@ function blankData() {
       /* Mist 3 is a chat model that crafts prompts. The actual image generation
          happens via /api/generate route, using stability/replicate. */
       omni: { provider: 'gemini', model: 'gemini-3.8-flash', fallbacks: [
-        { provider: 'gemini', model: 'gemini-2.0-flash' },
+        { provider: 'gemini', model: 'gemini-3.6-flash' },
         { provider: 'groq', model: 'openai/gpt-oss-120b' },
         { provider: 'pollinations', model: 'openai' }
       ] }
@@ -321,9 +322,9 @@ function isMultimodal(messages) {
    Format: <PROVIDER_ID>_KEY  (e.g. NIM_KEY, XAI_KEY, GEMINI_KEY) */
 function keyFor(providerId) {
   const dbKey = DB.providers[providerId] && DB.providers[providerId].apiKey;
-  if (dbKey) return dbKey;
+  if (dbKey) return dbKey.trim();
   const envKey = process.env[providerId.toUpperCase() + '_KEY'];
-  return envKey || '';
+  return envKey ? envKey.trim() : '';
 }
 
 /* Resolve an assistant + messages into an ordered list of {providerCfg,model,format} to try.
@@ -411,7 +412,7 @@ async function handleChat(req, res) {
   let targets;
   if (wantsWeb && keyFor('gemini')) {
     const geminiCfg = Object.assign({}, DB.providers.gemini || {}, { apiKey: keyFor('gemini'), format: 'gemini' });
-    targets = [{ providerCfg: geminiCfg, model: 'gemini-2.0-flash' }, ...resolveTargets(assistant, messages)];
+    targets = [{ providerCfg: geminiCfg, model: 'gemini-3.6-flash' }, ...resolveTargets(assistant, messages)];
   } else {
     targets = resolveTargets(assistant, messages);
   }
@@ -768,7 +769,7 @@ async function handleGenerate(req, res) {
   // 0. MiniMax H3 — frontier video/image generation
   if (minimaxKey) {
     try {
-      const r = await fetch('https://api.minimaxi.chat/v1/video_generation', {
+      const r = await fetch('https://api.minimax.io/v1/video_generation', {
         method: 'POST',
         headers: { 'authorization': 'Bearer ' + minimaxKey, 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -786,7 +787,7 @@ async function handleGenerate(req, res) {
           // Poll for completion (max 90 seconds)
           for (let i = 0; i < 18; i++) {
             await new Promise(r => setTimeout(r, 5000));
-            const check = await fetch('https://api.minimaxi.chat/v1/query/video_generation/' + j.task_id, {
+            const check = await fetch('https://api.minimax.io/v1/query/video_generation/' + j.task_id, {
               headers: { 'authorization': 'Bearer ' + minimaxKey },
               signal: AbortSignal.timeout(10000)
             });
@@ -1545,7 +1546,7 @@ function renderKeys(){
   var p1 = STATE.providers[r1.provider];
   var m1ModelInput = (p1 && p1.models && Array.isArray(p1.models))
     ? '<select id="m1-m">'+modelOpts(r1.provider, r1.model)+'</select>'
-    : '<input id="m1-m" value="'+esc(r1.model||'')+'" placeholder="e.g. gemini-2.0-flash">';
+    : '<input id="m1-m" value="'+esc(r1.model||'')+'" placeholder="e.g. gemini-3.6-flash">';
   html+='<div class="card" style="border-left:3px solid var(--brand)">'
     +'<h3 style="margin:0 0 4px">Pluto</h3>'
     +'<p class="muted" style="margin:0 0 12px">Quick everyday assistant. Responds fast.</p>'
@@ -1571,7 +1572,7 @@ function renderKeys(){
   var p3 = STATE.providers[r3.provider];
   var m3ModelInput = (p3 && p3.models && Array.isArray(p3.models))
     ? '<select id="m3-m">'+modelOpts(r3.provider, r3.model)+'</select>'
-    : '<input id="m3-m" value="'+esc(r3.model||'')+'" placeholder="e.g. gemini-2.0-flash" style="margin-bottom:10px">';
+    : '<input id="m3-m" value="'+esc(r3.model||'')+'" placeholder="e.g. gemini-3.6-flash" style="margin-bottom:10px">';
   html+='<div class="card" style="border-left:3px solid #8B5CF6">'
     +'<h3 style="margin:0 0 4px">Omni</h3>'
     +'<p class="muted" style="margin:0 0 12px">Visual creative. Images, video, critique.</p>'
