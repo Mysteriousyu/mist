@@ -5,7 +5,7 @@
   "main": "admin-server.js",
   "scripts": {
     "start": "node admin-server.js",
-    "postinstall": "npx playwright install --with-deps chromium"
+    "postinstall": "npx playwright install chromium || echo 'Playwright browser install skipped/failed — agentic browser features need the Docker deploy (see Dockerfile) to work.'"
   },
   "dependencies": {
     "playwright-core": "^1.48.0",
