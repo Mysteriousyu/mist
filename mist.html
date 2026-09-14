@@ -1366,8 +1366,13 @@ async function runAgentic(chat, task) {
       body: JSON.stringify({ task, userId: S.userId })
     }).catch(() => null);
 
-    if (!res || !res.ok || !res.body) {
-      msgRef.content = 'Agentic mode could not start. Make sure a Claude key is configured on the server.';
+    if (!res) {
+      msgRef.content = 'Agentic mode could not reach the server. Check your connection and try again.';
+      render(); return;
+    }
+    if (!res.ok || !res.body) {
+      const errJson = await res.json().catch(() => null);
+      msgRef.content = errJson && errJson.error ? errJson.error : ('Agentic mode failed (status ' + res.status + '). Check the Render logs for the real error.');
       render(); return;
     }
 
@@ -1421,7 +1426,7 @@ async function run(chat) {
       msg.pending = false;
       if (!r.ok) {
         msg.content = '**Image generation failed.**\n\n' + (j.error || 'Unknown error') +
-          '\n\n*Add a Stability AI, Replicate, Fal.ai, or HuggingFace key in the admin console → Keys & Models to enable Omni.*';
+          '\n\n*Check the CometAPI key in the admin console, or wait a moment — Pollinations (free, no key) should catch it as a fallback.*';
       } else if (j.image) {
         msg.content = '![generated image](' + j.image + ')\n\n*Generated with ' + (j.provider || 'model') + '.*';
       } else {
