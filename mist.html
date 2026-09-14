@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mist</title>
 <meta name="description" content="Mist — two assistants, one workspace.">
-<meta name="theme-color" content="#08090C">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Mist">
 <link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><defs><radialGradient id='g' cx='38%25' cy='32%25'><stop offset='0%25' stop-color='%239ff5e2'/><stop offset='26%25' stop-color='%234fd6c4'/><stop offset='60%25' stop-color='%233a7bd5'/><stop offset='100%25' stop-color='%231a1f3a'/></radialGradient></defs><rect width='180' height='180' rx='40' fill='%23080910'/><circle cx='90' cy='90' r='58' fill='url(%23g)'/></svg>">
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><radialGradient id='g' cx='38%25' cy='32%25'><stop offset='0%25' stop-color='%239ff5e2'/><stop offset='60%25' stop-color='%233a7bd5'/><stop offset='100%25' stop-color='%231a1f3a'/></radialGradient></defs><circle cx='16' cy='16' r='14' fill='url(%23g)'/></svg>">
-<link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22Mist%22%2C%22short_name%22%3A%22Mist%22%2C%22start_url%22%3A%22%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23080910%22%2C%22theme_color%22%3A%22%2308090C%22%2C%22description%22%3A%22Two%20AI%20assistants%2C%20one%20workspace%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%3Butf8%2C%253Csvg%2520xmlns%253D%2527http%253A%2F%2Fwww.w3.org%2F2000%2Fsvg%2527%2520viewBox%253D%25270%25200%2520512%2520512%2527%253E%253Cdefs%253E%253CradialGradient%2520id%253D%2527g%2527%2520cx%253D%252738%2525%2527%2520cy%253D%252732%2525%2527%253E%253Cstop%2520offset%253D%25270%2525%2527%2520stop-color%253D%2527%25239ff5e2%2527%2F%253E%253Cstop%2520offset%253D%252760%2525%2527%2520stop-color%253D%2527%25233a7bd5%2527%2F%253E%253Cstop%2520offset%253D%2527100%2525%2527%2520stop-color%253D%2527%25231a1f3a%2527%2F%253E%253C%2FradialGradient%253E%253C%2Fdefs%253E%253Crect%2520width%253D%2527512%2527%2520height%253D%2527512%2527%2520rx%253D%2527112%2527%2520fill%253D%2527%2523080910%2527%2F%253E%253Ccircle%2520cx%253D%2527256%2527%2520cy%253D%2527256%2527%2520r%253D%2527170%2527%2520fill%253D%2527url(%2523g)%2527%2F%253E%253C%2Fsvg%253E%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%20maskable%22%7D%5D%7D">
+<link rel="manifest" href="/manifest.json">
 <style>
 /* ============================== TOKENS ============================== */
 :root{
@@ -526,7 +527,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
         <button class="navitem" data-view="artifacts">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 5h16v14H4z"/><path d="M4 9h16"/></svg> Artifacts</button>
         <button class="navitem" data-view="studio">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M8 8L4 12l4 4M16 8l4 4-4 4M13.5 5l-3 14"/></svg> Mist Studio</button>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M8 8L4 12l4 4M16 8l4 4-4 4M13.5 5l-3 14"/></svg> Mist Codespace</button>
         <a class="navitem" id="linkStellar" href="stellar.html" target="_blank" rel="noopener" style="text-decoration:none">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"/></svg> Stellar
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;opacity:.5"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>
@@ -586,7 +587,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
             <button class="attach" id="btnAttach" aria-label="Attach file" title="Attach file">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12l-8.5 8.5a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg>
             </button>
-            <input type="file" id="fileInput" style="display:none" multiple>
+            <input type="file" id="fileInput" style="display:none" multiple accept="image/*,.txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.h,.rb,.go,.rs,.php,.sql,.yaml,.yml,.toml,.ini,.log,.pdf,.doc,.docx,.xls,.xlsx,.pptx,.zip">
             <button class="tool-pill" id="pillImage" data-tool="image" title="Generate an image with Omni">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M3 18l5-5 4 4 3-3 6 6"/></svg>
               Create image
@@ -594,6 +595,10 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
             <button class="tool-pill" id="pillWeb" data-tool="web" title="Search the web">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
               Search web
+            </button>
+            <button class="tool-pill" id="pillAgentic" data-tool="agentic" title="Let Sonar control a real browser to complete a task">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="10" r="1"/><circle cx="16" cy="10" r="1"/></svg>
+              Agentic
             </button>
             <button class="send" id="btnSend" disabled aria-label="Send message">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
@@ -627,7 +632,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
       <div class="studio">
         <div class="studio-left">
           <div class="pad">
-            <h2 style="margin:0 0 4px;font-size:18px;letter-spacing:-.02em">Mist Studio</h2>
+            <h2 style="margin:0 0 4px;font-size:18px;letter-spacing:-.02em">Mist Codespace</h2>
             <p class="mini" style="margin:0 0 14px">Describe what to build. Mist writes it, previews it live, and you keep the file.</p>
             <label class="field"><span>Model</span>
               <select id="studioModel"></select>
@@ -638,7 +643,7 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
             </label>
             <label class="field"><span>GitHub repo <small style="font-weight:400">(optional)</small></span>
               <input id="studioRepo" type="text" placeholder="user/repo or full URL">
-              <small>Paste a public repo URL to give Studio context about your codebase.</small>
+              <small>Paste a public repo URL to give Codespace context about your codebase.</small>
             </label>
             <div style="display:flex;gap:8px">
               <button class="btn grad" id="studioRun" style="flex:1">Build</button>
@@ -666,14 +671,14 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
     <section class="view" id="view-connectors">
       <div class="scroller"><div class="wrap wide">
         <div class="section-h"><h2>Connectors</h2><span class="mini" id="connCount"></span></div>
-        <p class="mini" style="margin-top:-6px">Connectors let Studio and chat reach your other tools. Each one needs its credentials set on the server — the browser never stores a secret.</p>
+        <p class="mini" style="margin-top:-6px">Connectors let Codespace and chat reach your other tools. Each one needs its credentials set on the server — the browser never stores a secret.</p>
         <div class="grid" id="connGrid" style="margin-top:16px"></div>
       </div></div>
     </section>
 
     <section class="view" id="view-downloads">
       <div class="scroller"><div class="wrap wide">
-        <div class="section-h"><h2>Downloads</h2><span class="mini">Install Mist, Mist Studio and Stellar as native-feeling apps.</span></div>
+        <div class="section-h"><h2>Downloads</h2><span class="mini">Install Mist, Mist Codespace and Stellar as native-feeling apps.</span></div>
         <p class="mini" style="margin-top:-6px">Each product installs as a Progressive Web App — one click, opens like a real app on your dock, home screen, or start menu. No app store, no build queue.</p>
         <div id="downloadsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-top:20px"></div>
       </div></div>
@@ -1293,18 +1298,104 @@ async function send(text) {
   // Fold attachments into the message content
   if (S.attachments.length) {
     const parts = S.attachments.map(a => {
-      if (a.isImage) return '[Image attached: ' + a.name + ']';
-      const preview = typeof a.data === 'string' ? a.data.slice(0, 6000) : '';
+      if (a.isImage) {
+        // For vision-capable models, include base64 image data
+        return { type: 'image_url', image_url: { url: a.data } };
+      }
+      const preview = typeof a.data === 'string' ? a.data.slice(0, 12000) : '';
       return '[File: ' + a.name + ']\n```\n' + preview + '\n```';
     });
-    content = (content ? content + '\n\n' : '') + parts.join('\n\n');
+    
+    // Check if any images are attached
+    const hasImages = S.attachments.some(a => a.isImage);
+    if (hasImages) {
+      // Build multimodal content array for vision models
+      const contentParts = [];
+      if (content) contentParts.push({ type: 'text', text: content });
+      parts.forEach(p => {
+        if (typeof p === 'string') contentParts.push({ type: 'text', text: p });
+        else contentParts.push(p);
+      });
+      content = contentParts;
+    } else {
+      content = (content ? content + '\n\n' : '') + parts.join('\n\n');
+    }
   }
   if (!chat.messages.length) { chat.title = titleFrom(content) || 'New chat'; chat.model = S.model; }
   chat.messages.push({ id: uid(), role: 'user', content, ts: now(), attachments: S.attachments.length ? S.attachments.map(a => ({ name: a.name, isImage: a.isImage })) : undefined });
   chat.updatedAt = now();
   S.attachments = []; renderAttachments();
   save.chats(); render(); scrollDown();
+
+  if (S.activeTool === 'agentic') {
+    const task = typeof content === 'string' ? content : text.trim();
+    S.activeTool = null; $('#pillAgentic').classList.remove('on');
+    await runAgentic(chat, task);
+    return;
+  }
   await run(chat);
+}
+
+/* ---- Agentic browser mode: streams live steps from a real Playwright session on the server ---- */
+async function runAgentic(chat, task) {
+  const msgId = uid();
+  chat.messages.push({ id: msgId, role: 'assistant', content: '_Starting agent — launching a browser…_', ts: now(), agentic: true, steps: [] });
+  save.chats(); render(); scrollDown();
+  const msgRef = chat.messages.find(m => m.id === msgId);
+
+  const renderSteps = () => {
+    const lines = [];
+    msgRef.steps.forEach(s => {
+      if (s.type === 'thought') lines.push(s.text);
+      if (s.type === 'action') lines.push('`→ ' + (s.action || 'action') + '`');
+      if (s.type === 'needs_help') lines.push('**I need your help:** ' + s.message);
+      if (s.type === 'done') lines.push(s.message);
+      if (s.type === 'error') lines.push('⚠️ ' + s.message);
+      if (s.type === 'screenshot' && s.screenshot) lines.push('![Browser](data:image/png;base64,' + s.screenshot + ')');
+      if (s.type === 'action' && s.screenshot) lines.push('![Browser](data:image/png;base64,' + s.screenshot + ')');
+      if (s.type === 'needs_help' && s.screenshot) lines.push('![Browser](data:image/png;base64,' + s.screenshot + ')');
+    });
+    msgRef.content = lines.join('\n\n') || '_Working…_';
+    render(); scrollDown();
+  };
+
+  try {
+    const res = await fetch('/api/agent/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-mist-user': S.userId },
+      body: JSON.stringify({ task, userId: S.userId })
+    }).catch(() => null);
+
+    if (!res || !res.ok || !res.body) {
+      msgRef.content = 'Agentic mode could not start. Make sure a Claude key is configured on the server.';
+      render(); return;
+    }
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const events = buf.split('\n\n'); buf = events.pop();
+      for (const ev of events) {
+        for (const line of ev.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          const raw = line.slice(5).trim();
+          if (!raw || raw === '[DONE]') continue;
+          let evt; try { evt = JSON.parse(raw); } catch { continue; }
+          if (evt.type === 'session') { msgRef.agentSessionId = evt.sessionId; continue; }
+          msgRef.steps.push(evt);
+          renderSteps();
+        }
+      }
+    }
+  } catch (e) {
+    msgRef.content = 'Agentic session error: ' + e.message;
+    render();
+  }
+  save.chats();
 }
 
 async function run(chat) {
@@ -1518,11 +1609,19 @@ function messageHTML(m, chat, isLast) {
   const body = m.pending && !m.content
     ? '<div class="typing"><i></i><i></i><i></i></div>'
     : md(m.content);
+  const feedbackBtns = m.pending ? '' :
+    '<span style="margin-left:auto;display:flex;gap:2px">' +
+    '<button class="act" data-vote="up" data-msg="' + m.id + '" title="Good response"' + (m.vote === 'up' ? ' style="color:var(--ok)"' : '') + '>👍</button>' +
+    '<button class="act" data-vote="down" data-msg="' + m.id + '" title="Bad response — teach the AI"' + (m.vote === 'down' ? ' style="color:var(--danger)"' : '') + '>👎</button>' +
+    '</span>';
   const acts = m.pending ? '' :
     '<div class="acts">' +
     '<button class="act" data-copy-text="' + m.id + '">Copy</button>' +
     (isLast ? '<button class="act" data-regen="' + m.id + '">Regenerate</button>' : '') +
-    '<button class="act danger" data-del="' + m.id + '">Delete</button></div>';
+    '<button class="act danger" data-del="' + m.id + '">Delete</button>' +
+    feedbackBtns + '</div>' +
+    (m.vote === 'down' && !m.corrected ? '<div class="correction-box" style="margin-top:8px;display:flex;gap:6px"><input type="text" data-correct-input="' + m.id + '" placeholder="What should the correct answer be?" style="flex:1;padding:6px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text)"><button class="btn sm" data-submit-correct="' + m.id + '">Teach</button></div>' : '') +
+    (m.corrected ? '<div style="margin-top:6px;font-size:11px;color:var(--ok)">✓ Correction saved — the AI will learn from this</div>' : '');
 
   return '<div class="msg assistant" data-id="' + m.id + '">' +
     '<div class="who"><span class="avatar ' + cls + '"></span>' + label + '</div>' +
@@ -1642,7 +1741,7 @@ function renderDownloads(){
   const isTablet = platform === 'ipad';
   const products = [
     { id: 'mist', name: 'Mist', tag: 'Chat + projects + artifacts', url: '/', logo: 'mist-logo' },
-    { id: 'studio', name: 'Mist Studio', tag: 'Design and code, live', url: '/#studio', logo: 'mist-logo' },
+    { id: 'studio', name: 'Mist Codespace', tag: 'Design and code, live', url: '/#studio', logo: 'mist-logo' },
     { id: 'stellar', name: 'Stellar', tag: 'The browser with a mind', url: '/stellar', logo: 'stellar-logo' }
   ];
   const platIcon = (p) => {
@@ -1726,7 +1825,7 @@ function render() {
   if (S.view === 'studio') renderStudioModels();
   const chat = currentChat();
   $('#topTitle').textContent = S.view === 'chat' ? (chat ? chat.title : 'New chat')
-    : ({ projects: 'Projects', artifacts: 'Artifacts', studio: 'Mist Studio', connectors: 'Connectors' })[S.view];
+    : ({ projects: 'Projects', artifacts: 'Artifacts', studio: 'Mist Codespace', connectors: 'Connectors' })[S.view];
   $$('#switch button').forEach(b => b.classList.toggle('on', b.dataset.m === S.model));
   $('#input').placeholder = S.model === 'omni'
     ? 'Describe an image or video for Omni…'
@@ -1857,9 +1956,16 @@ function renderAttachments(){
 }
 $('#btnAttach').onclick = () => $('#fileInput').click();
 $('#fileInput').addEventListener('change', async e => {
+  const MAX_FILES = 15;
+  const MAX_SIZE = 25 * 1024 * 1024; // 25MB per file — realistic ceiling for what an AI model can actually read
+  if (S.attachments.length + e.target.files.length > MAX_FILES) {
+    toast('Max ' + MAX_FILES + ' files at a time');
+  }
   for (const f of e.target.files) {
-    if (f.size > 5 * 1024 * 1024) { toast(f.name + ' is over 5 MB — skipped'); continue; }
+    if (S.attachments.length >= MAX_FILES) break;
+    if (f.size > MAX_SIZE) { toast(f.name + ' is over 25 MB — skipped'); continue; }
     const isImage = /^image\//.test(f.type);
+    const isPDF = f.type === 'application/pdf' || f.name.endsWith('.pdf');
     const reader = new FileReader();
     reader.onload = ev => {
       S.attachments.push({
@@ -1868,7 +1974,7 @@ $('#fileInput').addEventListener('change', async e => {
       });
       renderAttachments(); updateSend();
     };
-    if (isImage) reader.readAsDataURL(f);
+    if (isImage || isPDF) reader.readAsDataURL(f);
     else reader.readAsText(f);
   }
   e.target.value = '';
@@ -1884,13 +1990,22 @@ $('#pillImage').onclick = () => {
   S.activeTool = S.activeTool === 'image' ? null : 'image';
   $('#pillImage').classList.toggle('on', S.activeTool === 'image');
   $('#pillWeb').classList.remove('on');
+  $('#pillAgentic').classList.remove('on');
   if (S.activeTool === 'image') { S.model = 'omni'; render(); toast('Switched to Omni for image generation'); }
 };
 $('#pillWeb').onclick = () => {
   S.activeTool = S.activeTool === 'web' ? null : 'web';
   $('#pillWeb').classList.toggle('on', S.activeTool === 'web');
   $('#pillImage').classList.remove('on');
+  $('#pillAgentic').classList.remove('on');
   if (S.activeTool === 'web') toast('Web search will be included with the next message');
+};
+$('#pillAgentic').onclick = () => {
+  S.activeTool = S.activeTool === 'agentic' ? null : 'agentic';
+  $('#pillAgentic').classList.toggle('on', S.activeTool === 'agentic');
+  $('#pillImage').classList.remove('on');
+  $('#pillWeb').classList.remove('on');
+  if (S.activeTool === 'agentic') { S.model = 'sonar'; render(); toast('Agentic mode — Sonar will control a real browser for your next message'); }
 };
 
 /* message actions (delegated) */
@@ -1917,6 +2032,43 @@ $('#messages').addEventListener('click', e => {
   if ((el = q('data-del'))) {
     const id = el.dataset.del;
     confirmAsk('Delete this message?', 'It will be removed from the conversation along with the reply that followed it.', 'Delete', () => deleteMessage(id));
+    return;
+  }
+  // Thumbs up/down voting
+  if ((el = q('data-vote'))) {
+    const msgId = el.dataset.msg;
+    const vote = el.dataset.vote;
+    const m = chat.messages.find(x => x.id === msgId);
+    if (m) {
+      m.vote = vote;
+      if (vote === 'up') { toast('Thanks for the feedback!'); }
+      save.chats(); renderMessages();
+    }
+    return;
+  }
+  // Submit correction after thumbs down
+  if ((el = q('data-submit-correct'))) {
+    const msgId = el.dataset.submitCorrect;
+    const input = document.querySelector('[data-correct-input="' + msgId + '"]');
+    if (!input || !input.value.trim()) { toast('Please type the correct answer'); return; }
+    const m = chat.messages.find(x => x.id === msgId);
+    const prevUser = chat.messages[chat.messages.indexOf(m) - 1];
+    if (m) {
+      m.corrected = true;
+      fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-mist-user': S.userId },
+        body: JSON.stringify({
+          vote: 'down',
+          question: prevUser ? (typeof prevUser.content === 'string' ? prevUser.content : '') : '',
+          wrongAnswer: (typeof m.content === 'string' ? m.content.slice(0, 500) : ''),
+          correction: input.value.trim(),
+          assistant: m.model || S.model
+        })
+      }).catch(() => {});
+      toast('Correction saved — the AI will learn from this');
+      save.chats(); renderMessages();
+    }
     return;
   }
 });
@@ -2070,7 +2222,7 @@ $('#connDisconnect').onclick = () => {
   delete S.connectors[editingConn]; save.connectors(); closeModal('#mConnector'); renderConnectors(); toast('Disconnected');
 };
 
-/* ------------------------------ Mist Studio ------------------------------ */
+/* ------------------------------ Mist Codespace ------------------------------ */
 S.studioModel = 'sonar';
 $('#studioModel').onchange = e => {
   if (e.target.value === 'add') {
@@ -2176,7 +2328,7 @@ $('#studioDownload').onclick = () => download('mist-studio.html', $('#studioCode
 $('#studioSave').onclick = () => {
   const code = $('#studioCode').value.trim();
   if (!code) return toast('Nothing to save yet');
-  S.artifacts.unshift({ id: uid(), title: ($('#studioPrompt').value.trim().slice(0, 40) || 'Studio build'), type: 'html', code, chatId: null, ts: now() });
+  S.artifacts.unshift({ id: uid(), title: ($('#studioPrompt').value.trim().slice(0, 40) || 'Codespace build'), type: 'html', code, chatId: null, ts: now() });
   save.artifacts(); toast('Saved to artifacts');
 };
 

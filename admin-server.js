@@ -166,7 +166,10 @@ function blankData() {
     users: {},
     chats: {},
     projects: {},
-    sessions: {}
+    sessions: {},
+    corrections: [], // [{userId, question, wrongAnswer, correction, ts}] — AI learns from these
+    knowledgeBase: [], // [{id, content, tags, ts}] — admin-curated facts injected into prompts
+    userMemories: {} // {userId: [{fact, ts}]} — per-user memories the AI builds over time
   };
 }
 
@@ -213,7 +216,7 @@ const nowMs = () => Date.now();
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', c => { data += c; if (data.length > 5e6) req.destroy(); });
+    req.on('data', c => { data += c; if (data.length > 150e6) req.destroy(); });
     req.on('end', () => resolve(data));
     req.on('error', reject);
   });
@@ -374,6 +377,26 @@ function recordChat(userId, meta, userMessages, assistantReply) {
   c.assistant = meta.assistant || c.assistant;
   c.messages = userMessages.concat(assistantReply ? [{ role: 'assistant', content: assistantReply }] : []);
   c.updatedAt = nowMs();
+
+  // Auto-extract [MEMORY: ...] tags from AI responses and save to user memory
+  if (assistantReply && userId) {
+    const memMatches = assistantReply.match(/\[MEMORY:\s*([^\]]+)\]/gi);
+    if (memMatches) {
+      if (!DB.userMemories) DB.userMemories = {};
+      if (!DB.userMemories[userId]) DB.userMemories[userId] = [];
+      memMatches.forEach(m => {
+        const fact = m.replace(/\[MEMORY:\s*/i, '').replace(/\]$/, '').trim();
+        if (fact && fact.length > 2) {
+          // Don't add duplicate facts
+          const exists = DB.userMemories[userId].some(x => x.fact.toLowerCase() === fact.toLowerCase());
+          if (!exists) {
+            DB.userMemories[userId].push({ fact, ts: nowMs() });
+            if (DB.userMemories[userId].length > 50) DB.userMemories[userId] = DB.userMemories[userId].slice(-50);
+          }
+        }
+      });
+    }
+  }
   save();
 }
 
@@ -422,7 +445,31 @@ async function handleChat(req, res) {
   const basePrompt = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (body.system || 'You are a helpful assistant.');
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const system = basePrompt + '\n\nToday is ' + dateStr + '.' + (wantsWeb ? ' Search the web for current information to answer accurately.' : '');
+  // Inject corrections the AI has been told about before (learning from mistakes)
+  let correctionContext = '';
+  if (DB.corrections && DB.corrections.length > 0) {
+    const relevant = DB.corrections.slice(-15).map(c =>
+      '- When asked "' + c.question.slice(0, 60) + '": ' + c.correction.slice(0, 150)
+    ).join('\n');
+    correctionContext = '\n\n[Past corrections — avoid these mistakes]:\n' + relevant;
+  }
+
+  // Inject per-user memory so the AI remembers this user
+  let memoryContext = '';
+  if (DB.userMemories && DB.userMemories[userId] && DB.userMemories[userId].length > 0) {
+    const facts = DB.userMemories[userId].slice(-15).map(m => '- ' + m.fact).join('\n');
+    memoryContext = '\n\n[What you know about this user — reference naturally, don\'t list]:\n' + facts;
+  }
+
+  // Inject knowledge base (admin-curated facts)
+  let kbContext = '';
+  if (DB.knowledgeBase && DB.knowledgeBase.length > 0) {
+    const entries = DB.knowledgeBase.slice(-20).map(e => '- ' + e.content).join('\n');
+    kbContext = '\n\n[Knowledge base — always follow these facts/rules]:\n' + entries;
+  }
+
+  const system = basePrompt + '\n\nToday is ' + dateStr + '.' + (wantsWeb ? ' Search the web for current information.' : '') + kbContext + correctionContext + memoryContext +
+    '\n\nIMPORTANT: If the user tells you their name, preferences, or any personal fact, save it by including [MEMORY: fact here] at the end of your response. Only do this for new facts worth remembering.';
   const meta = { chatId: body.chatId, title: body.title, assistant };
 
   for (let i = 0; i < targets.length; i++) {
@@ -754,302 +801,44 @@ async function handleGenerate(req, res) {
   const user = touchUser(userId);
   if (user.banned) return send(res, 403, { error: 'Suspended' });
 
-  const minimaxKey  = keyFor('minimax');
-  const elevenlabsKey = keyFor('elevenlabs');
-  const togetherKey = keyFor('together');
-  const openaiKey   = keyFor('openai');
-  const geminiKey   = keyFor('gemini');
-  const falKey      = keyFor('fal');
-  const stabKey     = keyFor('stability');
-  const repKey      = keyFor('replicate');
-  const hfKey       = keyFor('huggingface');
+  const cometKey = keyFor('cometapi');
 
-  // ==================== TOP PRIORITY: MiniMax H3 ====================
-
-  // 0. MiniMax H3 — frontier video/image generation
-  if (minimaxKey) {
+  // ==================== 1. CometAPI (your key, 500+ models, best quality) ====================
+  if (cometKey) {
     try {
-      const r = await fetch('https://api.minimax.io/v1/video_generation', {
+      const r = await fetch('https://api.cometapi.com/v1/images/generations', {
         method: 'POST',
-        headers: { 'authorization': 'Bearer ' + minimaxKey, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'MiniMax-H3',
-          prompt: body.prompt,
-          resolution: '768P',
-          duration: 5
-        }),
-        signal: AbortSignal.timeout(15000)
-      });
-      if (r.ok) {
-        const j = await r.json();
-        // H3 returns a task_id for async generation
-        if (j.task_id) {
-          // Poll for completion (max 90 seconds)
-          for (let i = 0; i < 18; i++) {
-            await new Promise(r => setTimeout(r, 5000));
-            const check = await fetch('https://api.minimax.io/v1/query/video_generation/' + j.task_id, {
-              headers: { 'authorization': 'Bearer ' + minimaxKey },
-              signal: AbortSignal.timeout(10000)
-            });
-            if (check.ok) {
-              const s = await check.json();
-              if (s.status === 'Success' || s.status === 'success') {
-                const url = s.file_id || (s.content && s.content.url) || (s.task && s.task.content && s.task.content.url);
-                if (url) return send(res, 200, { image: url, provider: 'minimax-h3', type: 'video' });
-              }
-              if (s.status === 'Failed' || s.status === 'failed') break;
-            }
-          }
-        }
-        // Direct image response
-        if (j.data && j.data[0]) {
-          const img = j.data[0].url || j.data[0];
-          if (img) return send(res, 200, { image: img, provider: 'minimax-h3' });
-        }
-      } else {
-        console.error('MiniMax H3 error:', (await r.text().catch(() => '')).slice(0, 300));
-      }
-    } catch (e) { console.error('MiniMax H3 failed:', e.message); }
-  }
-
-  // ==================== TOP PRIORITY: ElevenLabs ====================
-
-  // 1. ElevenLabs Image & Video (Beta) — supports Flux Kontext, GPT Image, Seedream, Nanobanana
-  if (elevenlabsKey) {
-    try {
-      const r = await fetch('https://api.elevenlabs.io/v1/images/generate', {
-        method: 'POST',
-        headers: { 'xi-api-key': elevenlabsKey, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          prompt: body.prompt,
-          model_id: body.imageModel || 'flux-kontext',
-          n: 1,
-          size: '1024x1024'
-        }),
+        headers: { 'authorization': 'Bearer ' + cometKey, 'content-type': 'application/json' },
+        body: JSON.stringify({ model: body.imageModel || 'gpt-image-2', prompt: body.prompt, n: 1, size: '1024x1024' }),
         signal: AbortSignal.timeout(30000)
       });
       if (r.ok) {
         const j = await r.json();
-        // Handle various response formats
-        if (j.images && j.images[0]) {
-          const img = j.images[0].url || j.images[0].base64 || j.images[0];
-          const imgUrl = typeof img === 'string' && img.startsWith('http') ? img : (typeof img === 'string' ? 'data:image/png;base64,' + img : null);
-          if (imgUrl) return send(res, 200, { image: imgUrl, provider: 'elevenlabs' });
-        }
         if (j.data && j.data[0]) {
-          const img = j.data[0].url || j.data[0].b64_json;
-          if (img) return send(res, 200, { image: img.startsWith('http') ? img : 'data:image/png;base64,' + img, provider: 'elevenlabs' });
+          const img = j.data[0].url || (j.data[0].b64_json ? 'data:image/png;base64,' + j.data[0].b64_json : null);
+          if (img) return send(res, 200, { image: img, provider: 'cometapi' });
         }
-        if (j.image) return send(res, 200, { image: j.image, provider: 'elevenlabs' });
-      } else {
-        console.error('ElevenLabs image error:', (await r.text().catch(() => '')).slice(0, 300));
-      }
-    } catch (e) { console.error('ElevenLabs image failed:', e.message); }
+      } else { console.error('CometAPI image error:', (await r.text().catch(() => '')).slice(0, 300)); }
+    } catch (e) { console.error('CometAPI image failed:', e.message); }
   }
 
-  // ==================== FREE PROVIDERS (no key / no credits needed) ====================
-
-  // 1. Pollinations.ai — completely FREE, no API key, uses FLUX
+  // ==================== 2. Pollinations (FREE, no key, always works) ====================
   try {
     const encoded = encodeURIComponent(body.prompt);
     const seed = Math.floor(Math.random() * 999999);
     const polUrl = 'https://image.pollinations.ai/prompt/' + encoded + '?width=1024&height=768&seed=' + seed + '&nologo=true&model=flux';
-    const r = await fetch(polUrl);
+    const r = await fetch(polUrl, { signal: AbortSignal.timeout(20000) });
     if (r.ok) {
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length > 1000) {
         return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'pollinations' });
       }
     }
-    console.error('Pollinations returned non-image or failed');
-  } catch (e) { console.error('Pollinations failed:', e.message); }
+  } catch (e) { console.error('Pollinations image failed:', e.message); }
 
-  // 2. Stable Horde — FREE, community GPUs, no API key needed (anonymous)
-  try {
-    const startR = await fetch('https://stablehorde.net/api/v2/generate/async', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'apikey': '0000000000' },
-      body: JSON.stringify({
-        prompt: body.prompt,
-        params: { steps: 20, width: 1024, height: 768, cfg_scale: 7 },
-        nsfw: false, censor_nsfw: true,
-        models: ['FLUX.1 [schnell]']
-      })
-    });
-    const startJ = await startR.json();
-    if (startJ.id) {
-      for (let i = 0; i < 40; i++) {
-        await new Promise(r => setTimeout(r, 3000));
-        const checkR = await fetch('https://stablehorde.net/api/v2/generate/check/' + startJ.id);
-        const checkJ = await checkR.json();
-        if (checkJ.done) {
-          const statusR = await fetch('https://stablehorde.net/api/v2/generate/status/' + startJ.id);
-          const statusJ = await statusR.json();
-          if (statusJ.generations && statusJ.generations[0] && statusJ.generations[0].img) {
-            return send(res, 200, { image: statusJ.generations[0].img, provider: 'stablehorde' });
-          }
-          break;
-        }
-        if (checkJ.faulted) break;
-      }
-    }
-    console.error('Stable Horde: timed out or failed');
-  } catch (e) { console.error('Stable Horde failed:', e.message); }
-
-  // 3. AirForce API — FREE, no key needed, multiple models
-  try {
-    const afUrl = 'https://api.airforce/v1/images/generations';
-    const r = await fetch(afUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: 'flux',
-        prompt: body.prompt,
-        size: '1024x768'
-      })
-    });
-    if (r.ok) {
-      const j = await r.json();
-      if (j.data && j.data[0] && j.data[0].url) {
-        return send(res, 200, { image: j.data[0].url, provider: 'airforce' });
-      }
-    }
-    console.error('AirForce: no image returned');
-  } catch (e) { console.error('AirForce failed:', e.message); }
-
-  // ==================== FREE TIER PROVIDERS (need key but have free credits) ====================
-
-  // 4. Together AI — free tier, FLUX model
-  if (togetherKey) {
-    try {
-      const r = await fetch('https://api.together.xyz/v1/images/generations', {
-        method: 'POST',
-        headers: { authorization: 'Bearer ' + togetherKey, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'black-forest-labs/FLUX.1-schnell-Free',
-          prompt: body.prompt, n: 1, width: 1024, height: 768, steps: 4
-        })
-      });
-      if (!r.ok) { console.error('Together image error:', (await r.text().catch(()=>'')).slice(0,300)); }
-      else {
-        const j = await r.json();
-        if (j.data && j.data[0] && j.data[0].url) return send(res, 200, { image: j.data[0].url, provider: 'together' });
-      }
-    } catch (e) { console.error('Together image failed:', e.message); }
-  }
-
-  // ==================== PAID PROVIDERS (fallbacks) ====================
-
-  // 5. OpenAI DALL-E 3
-  if (openaiKey) {
-    try {
-      const r = await fetch('https://api.openai.com/v1/images/generations', {
-        method: 'POST',
-        headers: { authorization: 'Bearer ' + openaiKey, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'dall-e-3', prompt: body.prompt, n: 1, size: '1024x1024', quality: 'standard' })
-      });
-      if (!r.ok) { console.error('OpenAI DALL-E error:', (await r.text().catch(()=>'')).slice(0,300)); }
-      else {
-        const j = await r.json();
-        if (j.data && j.data[0] && j.data[0].url) return send(res, 200, { image: j.data[0].url, provider: 'openai' });
-      }
-    } catch (e) { console.error('OpenAI DALL-E failed:', e.message); }
-  }
-
-  // 6. Google Gemini Imagen
-  if (geminiKey) {
-    try {
-      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:generateImages?key=' + encodeURIComponent(geminiKey), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt: body.prompt, config: { numberOfImages: 1 } })
-      });
-      if (!r.ok) { console.error('Gemini Imagen error:', (await r.text().catch(()=>'')).slice(0,300)); }
-      else {
-        const j = await r.json();
-        if (j.generatedImages && j.generatedImages[0] && j.generatedImages[0].image && j.generatedImages[0].image.imageBytes) {
-          return send(res, 200, { image: 'data:image/png;base64,' + j.generatedImages[0].image.imageBytes, provider: 'gemini' });
-        }
-      }
-    } catch (e) { console.error('Gemini Imagen failed:', e.message); }
-  }
-
-  // 7. Fal.ai
-  if (falKey) {
-    try {
-      const r = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
-        method: 'POST',
-        headers: { 'authorization': 'key ' + falKey, 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt: body.prompt, num_inference_steps: 4 })
-      });
-      if (r.ok) {
-        const j = await r.json();
-        if (j.images && j.images[0]) return send(res, 200, { image: j.images[0].url, provider: 'fal' });
-      }
-    } catch (e) { console.error('Fal failed:', e.message); }
-  }
-
-  // 8. Stability AI
-  if (stabKey) {
-    try {
-      const form = new FormData();
-      form.append('prompt', body.prompt);
-      form.append('output_format', 'png');
-      if (body.aspect) form.append('aspect_ratio', body.aspect);
-      const r = await fetch('https://api.stability.ai/v2beta/stable-image/generate/core', {
-        method: 'POST',
-        headers: { authorization: 'Bearer ' + stabKey, accept: 'image/*' },
-        body: form
-      });
-      if (r.ok) {
-        const buf = Buffer.from(await r.arrayBuffer());
-        return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'stability' });
-      }
-    } catch (e) { console.error('Stability failed:', e.message); }
-  }
-
-  // 9. Replicate
-  if (repKey) {
-    try {
-      const start = await fetch('https://api.replicate.com/v1/predictions', {
-        method: 'POST',
-        headers: { authorization: 'Token ' + repKey, 'content-type': 'application/json' },
-        body: JSON.stringify({ version: 'black-forest-labs/flux-schnell', input: { prompt: body.prompt } })
-      });
-      const p = await start.json();
-      if (p.id) {
-        for (let i = 0; i < 30; i++) {
-          await new Promise(r => setTimeout(r, 2000));
-          const s = await fetch('https://api.replicate.com/v1/predictions/' + p.id, {
-            headers: { authorization: 'Token ' + repKey }
-          }).then(r => r.json());
-          if (s.status === 'succeeded') {
-            const url = Array.isArray(s.output) ? s.output[0] : s.output;
-            return send(res, 200, { image: url, provider: 'replicate' });
-          }
-          if (s.status === 'failed') break;
-        }
-      }
-    } catch (e) { console.error('Replicate failed:', e.message); }
-  }
-
-  // 10. HuggingFace
-  if (hfKey) {
-    try {
-      const r = await fetch('https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0', {
-        method: 'POST',
-        headers: { authorization: 'Bearer ' + hfKey },
-        body: Buffer.from(body.prompt)
-      });
-      if (r.ok) {
-        const buf = Buffer.from(await r.arrayBuffer());
-        return send(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), provider: 'huggingface' });
-      }
-    } catch (e) { console.error('HuggingFace failed:', e.message); }
-  }
-
-  return send(res, 503, { error: 'All image providers failed. Check your API keys and credits in the admin console.' });
+  return send(res, 503, { error: 'Image generation failed. Check your CometAPI key or try again.' });
 }
+
 
 /* ------------------------------ workspaces (multi-user accounts) ------------------------------ */
 async function handleWorkspace(req, res) {
@@ -1184,6 +973,253 @@ async function handleConnectResult(req, res) {
   return send(res, 200, { ok: true });
 }
 
+/* ------------------------------ AGENTIC BROWSER (Sonar computer-use) ------------------------------
+   A real Playwright-controlled Chromium browser that Sonar (Claude) drives via
+   Anthropic's computer-use tool. Screenshot -> Claude decides an action -> we execute it
+   -> screenshot again -> repeat, until the task is done, a step cap is hit, or the agent
+   hits something it genuinely cannot do alone (CAPTCHA, login wall, 2FA, payment, etc.),
+   in which case it pauses and asks the user directly in the chat.
+   ---------------------------------------------------------------------------------- */
+
+let _playwright = null;
+function getPlaywright() {
+  if (_playwright) return _playwright;
+  try { _playwright = require('playwright'); } catch { _playwright = null; }
+  return _playwright;
+}
+
+const AGENT_SESSIONS = {}; // sessionId -> { browser, context, page, log: [], status, task, userId }
+const AGENT_MAX_STEPS = 40;
+const AGENT_VIEWPORT = { width: 1280, height: 800 };
+
+function agentUid() { return 'agent_' + crypto.randomBytes(8).toString('hex'); }
+
+async function agentScreenshot(page) {
+  const buf = await page.screenshot({ type: 'png' });
+  return buf.toString('base64');
+}
+
+function computerTool() {
+  return {
+    type: 'computer_20241022',
+    name: 'computer',
+    display_width_px: AGENT_VIEWPORT.width,
+    display_height_px: AGENT_VIEWPORT.height,
+    display_number: 1
+  };
+}
+
+async function agentExecuteAction(page, action) {
+  const a = action.input || {};
+  switch (action.name === 'computer' ? a.action : action.name) {
+    case 'screenshot':
+      return;
+    case 'left_click':
+      await page.mouse.click(a.coordinate[0], a.coordinate[1]);
+      break;
+    case 'double_click':
+      await page.mouse.dblclick(a.coordinate[0], a.coordinate[1]);
+      break;
+    case 'right_click':
+      await page.mouse.click(a.coordinate[0], a.coordinate[1], { button: 'right' });
+      break;
+    case 'mouse_move':
+      await page.mouse.move(a.coordinate[0], a.coordinate[1]);
+      break;
+    case 'type':
+      await page.keyboard.type(a.text, { delay: 15 });
+      break;
+    case 'key':
+      await page.keyboard.press(mapKey(a.text));
+      break;
+    case 'scroll': {
+      const dx = a.scroll_direction === 'left' ? -100 : a.scroll_direction === 'right' ? 100 : 0;
+      const dy = a.scroll_direction === 'up' ? -100 : a.scroll_direction === 'down' ? 100 : 0;
+      await page.mouse.move(a.coordinate ? a.coordinate[0] : 640, a.coordinate ? a.coordinate[1] : 400);
+      await page.mouse.wheel(dx * (a.scroll_amount || 3), dy * (a.scroll_amount || 3));
+      break;
+    }
+    case 'wait':
+      await new Promise(r => setTimeout(r, Math.min((a.duration || 1) * 1000, 5000)));
+      break;
+    case 'cursor_position':
+      return;
+    default:
+      break;
+  }
+}
+
+function mapKey(k) {
+  const map = { Return: 'Enter', BackSpace: 'Backspace', Escape: 'Escape', Tab: 'Tab',
+    Up: 'ArrowUp', Down: 'ArrowDown', Left: 'ArrowLeft', Right: 'ArrowRight',
+    'ctrl+a': 'Control+A', 'ctrl+c': 'Control+C', 'ctrl+v': 'Control+V' };
+  return map[k] || k;
+}
+
+async function agentDetectBlocker(page) {
+  try {
+    const text = (await page.innerText('body').catch(() => '')).toLowerCase();
+    if (/captcha|are you a robot|verify you are human|hcaptcha|recaptcha/.test(text)) return 'captcha';
+    if (/two-factor|2fa|verification code|enter the code we sent/.test(text)) return '2fa';
+    if (/card number|cvv|billing address|payment method/.test(text) && /pay|purchase|subscribe|checkout/.test(text)) return 'payment';
+    if (/confirm your email|check your inbox|verify your email/.test(text)) return 'email_verify';
+    return null;
+  } catch { return null; }
+}
+
+async function startAgentSession(userId, task) {
+  const pw = getPlaywright();
+  if (!pw) throw new Error('Agent browser is not installed on the server yet.');
+  const browser = await pw.chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  const context = await browser.newContext({ viewport: AGENT_VIEWPORT });
+  const page = await context.newPage();
+  await page.goto('https://www.google.com', { waitUntil: 'domcontentloaded' }).catch(() => {});
+  const id = agentUid();
+  AGENT_SESSIONS[id] = { browser, context, page, log: [], status: 'running', task, userId, step: 0, createdAt: nowMs() };
+  return id;
+}
+
+async function stopAgentSession(id) {
+  const s = AGENT_SESSIONS[id];
+  if (!s) return;
+  try { await s.browser.close(); } catch {}
+  delete AGENT_SESSIONS[id];
+}
+
+async function handleAgentStart(req, res) {
+  cors(res);
+  const body = await readJson(req);
+  const userId = req.headers['x-mist-user'] || body.userId || 'anon';
+  const task = (body.task || '').trim();
+  if (!task) return send(res, 400, { error: 'Missing task' });
+
+  const anthropicKey = keyFor('anthropic');
+  const cometKey = keyFor('cometapi');
+  if (!anthropicKey && !cometKey) {
+    return send(res, 503, { error: 'Agentic mode needs a working Claude key (direct Anthropic or via CometAPI) — it is the only provider wired up for computer-use in Mist right now.' });
+  }
+
+  let sessionId = body.resumeSessionId && AGENT_SESSIONS[body.resumeSessionId] ? body.resumeSessionId : null;
+  if (!sessionId) {
+    try {
+      sessionId = await startAgentSession(userId, task);
+    } catch (e) {
+      return send(res, 500, { error: e.message });
+    }
+  }
+
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+  const send_ = (obj) => res.write('data: ' + JSON.stringify(obj) + '\n\n');
+  send_({ type: 'session', sessionId });
+
+  const session = AGENT_SESSIONS[sessionId];
+  clearTimeout(session._pauseTimer);
+  session.status = 'running';
+  const messages = [{
+    role: 'user',
+    content: [{ type: 'text', text:
+      'You are controlling a real Chromium browser to complete this task for the user: "' + task + '". ' +
+      'Take a screenshot first to see the current state. Work step by step using the computer tool. ' +
+      'If you reach a CAPTCHA, a login wall needing credentials you do not have, two-factor authentication, ' +
+      'a payment form, or anything else you cannot do without the user, STOP and clearly explain in plain text ' +
+      'exactly what you need from the user instead of guessing or trying to bypass it. ' +
+      'When the task is fully done, say so clearly in plain text and stop calling the computer tool.'
+    }]
+  }];
+
+  try {
+    for (let step = 0; step < AGENT_MAX_STEPS; step++) {
+      session.step = step;
+      const shot = await agentScreenshot(session.page);
+      if (step > 0) {
+        messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: session._lastToolId, content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot } }] }] });
+      } else {
+        messages[0].content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot } });
+      }
+
+      const blocker = await agentDetectBlocker(session.page);
+      if (blocker) {
+        const askMap = {
+          captcha: 'This site is showing a CAPTCHA. Please solve it yourself in a normal browser, or tell me how you\'d like to proceed.',
+          '2fa': 'This site is asking for a two-factor authentication code. Please provide the code, or complete this step yourself.',
+          payment: 'This step involves entering payment details. I won\'t enter payment info on your behalf — please complete checkout yourself, or tell me to skip it.',
+          email_verify: 'This site wants email verification. Please check your inbox and confirm, or paste the verification link/code here.'
+        };
+        session.status = 'needs_help';
+        send_({ type: 'needs_help', reason: blocker, message: askMap[blocker] || 'I need your help to continue.', screenshot: shot });
+        res.end();
+        // Keep a paused browser alive for 10 minutes so the user has time to respond and resume.
+        clearTimeout(session._pauseTimer);
+        session._pauseTimer = setTimeout(() => stopAgentSession(sessionId), 10 * 60 * 1000);
+        return;
+      }
+
+      const useCometFirst = !!cometKey;
+      const anthroKey = useCometFirst ? cometKey : anthropicKey;
+      const anthroUrl = useCometFirst ? 'https://api.cometapi.com/v1/messages' : 'https://api.anthropic.com/v1/messages';
+      const model = 'claude-fable-5-1';
+
+      let apiRes;
+      try {
+        apiRes = await fetch(anthroUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': anthroKey, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'computer-use-2024-10-22' },
+          body: JSON.stringify({ model, max_tokens: 1024, tools: [computerTool()], messages }),
+          signal: AbortSignal.timeout(45000)
+        });
+      } catch (e) {
+        send_({ type: 'error', message: 'Agent brain unreachable: ' + e.message });
+        break;
+      }
+      if (!apiRes.ok) {
+        const t = await apiRes.text().catch(() => '');
+        send_({ type: 'error', message: 'Agent brain error: ' + t.slice(0, 300) });
+        break;
+      }
+      const data = await apiRes.json();
+      const content = data.content || [];
+      const textParts = content.filter(c => c.type === 'text').map(c => c.text).join(' ');
+      const toolUse = content.find(c => c.type === 'tool_use');
+
+      if (textParts) send_({ type: 'thought', text: textParts });
+
+      if (!toolUse) {
+        send_({ type: 'done', message: textParts || 'Task complete.' });
+        break;
+      }
+
+      session._lastToolId = toolUse.id;
+      const actionName = (toolUse.input && toolUse.input.action) || toolUse.name;
+      send_({ type: 'action', action: actionName, detail: toolUse.input, screenshot: shot });
+
+      try { await agentExecuteAction(session.page, toolUse); } catch (e) { send_({ type: 'action_error', message: e.message }); }
+      
+      // Send a fresh screenshot after the action executes so user sees the result
+      await new Promise(r => setTimeout(r, 800));
+      const afterShot = await agentScreenshot(session.page);
+      send_({ type: 'screenshot', screenshot: afterShot });
+      messages.push({ role: 'assistant', content });
+
+      if (step === AGENT_MAX_STEPS - 1) {
+        send_({ type: 'done', message: 'Reached the step limit (' + AGENT_MAX_STEPS + ') for one agent run. Tell me to continue if the task needs more steps.' });
+      }
+    }
+  } catch (e) {
+    send_({ type: 'error', message: e.message });
+  } finally {
+    res.write('data: [DONE]\n\n');
+    res.end();
+    setTimeout(() => stopAgentSession(sessionId), 60000);
+  }
+}
+
+async function handleAgentStop(req, res) {
+  cors(res);
+  const body = await readJson(req);
+  await stopAgentSession(body.sessionId);
+  return send(res, 200, { ok: true });
+}
+
 /* ------------------------------ router ------------------------------ */
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
@@ -1194,6 +1230,74 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/api/chat' && req.method === 'POST') return handleChat(req, res);
   if (urlPath === '/api/sync' && req.method === 'POST') return handleSync(req, res);
   if (urlPath === '/api/generate' && req.method === 'POST') return handleGenerate(req, res);
+  if (urlPath === '/api/agent/start' && req.method === 'POST') return handleAgentStart(req, res);
+  if (urlPath === '/api/agent/stop' && req.method === 'POST') return handleAgentStop(req, res);
+  if (urlPath === '/api/feedback' && req.method === 'POST') {
+    cors(res);
+    const body = await readJson(req);
+    if (!body) return send(res, 400, { error: 'Bad request' });
+    const userId = req.headers['x-mist-user'] || body.userId || 'anon';
+    if (body.vote === 'down' && body.correction) {
+      if (!DB.corrections) DB.corrections = [];
+      DB.corrections.push({
+        userId, question: (body.question || '').slice(0, 500),
+        wrongAnswer: (body.wrongAnswer || '').slice(0, 500),
+        correction: (body.correction || '').slice(0, 1000),
+        assistant: body.assistant || 'unknown', ts: nowMs()
+      });
+      if (DB.corrections.length > 200) DB.corrections = DB.corrections.slice(-200);
+      save();
+    }
+    return send(res, 200, { ok: true });
+  }
+
+  // Per-user memory — AI saves facts about users it learns during conversation
+  if (urlPath === '/api/memory' && req.method === 'POST') {
+    cors(res);
+    const body = await readJson(req);
+    const userId = req.headers['x-mist-user'] || body.userId || 'anon';
+    if (!DB.userMemories) DB.userMemories = {};
+    if (!DB.userMemories[userId]) DB.userMemories[userId] = [];
+    if (body.action === 'add' && body.fact) {
+      DB.userMemories[userId].push({ fact: body.fact.slice(0, 300), ts: nowMs() });
+      if (DB.userMemories[userId].length > 50) DB.userMemories[userId] = DB.userMemories[userId].slice(-50);
+      save();
+      return send(res, 200, { ok: true });
+    }
+    if (body.action === 'list') {
+      return send(res, 200, { memories: DB.userMemories[userId] || [] });
+    }
+    if (body.action === 'clear') {
+      DB.userMemories[userId] = [];
+      save();
+      return send(res, 200, { ok: true });
+    }
+    return send(res, 400, { error: 'Unknown action' });
+  }
+
+  // Knowledge base — admin-curated facts all AIs reference
+  if (urlPath === '/api/knowledge' && req.method === 'POST') {
+    cors(res);
+    if (!validSession(req)) return send(res, 401, { error: 'Admin only' });
+    const body = await readJson(req);
+    if (!DB.knowledgeBase) DB.knowledgeBase = [];
+    if (body.action === 'add' && body.content) {
+      DB.knowledgeBase.push({ id: uid(), content: body.content.slice(0, 1000), tags: (body.tags || '').slice(0, 200), ts: nowMs() });
+      if (DB.knowledgeBase.length > 100) DB.knowledgeBase = DB.knowledgeBase.slice(-100);
+      save();
+      return send(res, 200, { ok: true });
+    }
+    if (body.action === 'list') {
+      return send(res, 200, { entries: DB.knowledgeBase });
+    }
+    if (body.action === 'delete' && body.id) {
+      DB.knowledgeBase = DB.knowledgeBase.filter(e => e.id !== body.id);
+      save();
+      return send(res, 200, { ok: true });
+    }
+    return send(res, 400, { error: 'Unknown action' });
+  }
+
   if (urlPath === '/api/workspace' && req.method === 'POST') return handleWorkspace(req, res);
   if (urlPath.startsWith('/api/workspace/join/') && req.method === 'POST') return handleWorkspaceJoin(req, res, urlPath.split('/').pop());
   if (urlPath === '/api/connect/token' && req.method === 'POST') return handleConnectToken(req, res);
@@ -1230,6 +1334,26 @@ const server = http.createServer(async (req, res) => {
   }
 
   // serve Stellar (the AI browser)
+  // serve manifest.json for PWA (add to dock)
+  if (urlPath === '/manifest.json') {
+    try {
+      const json = fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8');
+      res.writeHead(200, { 'content-type': 'application/manifest+json; charset=utf-8' });
+      return res.end(json);
+    } catch {
+      return send(res, 404, { error: 'manifest.json not found' });
+    }
+  }
+  if (urlPath === '/stellar-manifest.json') {
+    try {
+      const json = fs.readFileSync(path.join(__dirname, 'stellar-manifest.json'), 'utf8');
+      res.writeHead(200, { 'content-type': 'application/manifest+json; charset=utf-8' });
+      return res.end(json);
+    } catch {
+      return send(res, 404, { error: 'stellar-manifest.json not found' });
+    }
+  }
+
   if (urlPath === '/stellar' || urlPath === '/stellar.html') {
     try {
       const html = fs.readFileSync(path.join(__dirname, 'stellar.html'), 'utf8');

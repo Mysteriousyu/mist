@@ -1,10 +1,15 @@
 {
   "name": "mist",
   "version": "1.0.0",
-  "description": "Mist AI — two assistants, one interface",
+  "description": "Mist AI — three assistants, one interface",
   "main": "admin-server.js",
   "scripts": {
-    "start": "node admin-server.js"
+    "start": "node admin-server.js",
+    "postinstall": "npx playwright install --with-deps chromium"
+  },
+  "dependencies": {
+    "playwright-core": "^1.48.0",
+    "playwright": "^1.48.0"
   },
   "engines": {
     "node": ">=18"

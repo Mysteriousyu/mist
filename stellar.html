@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Stellar</title>
 <meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Stellar">
+<link rel="manifest" href="/stellar-manifest.json">
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23111'/><circle cx='16' cy='16' r='6' fill='%23333'/></svg>">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -239,6 +241,58 @@ button{cursor:pointer}
 }
 .toast.show{transform:translateX(-50%) translateY(0)}
 
+/* Agentic live view */
+.agent-view{
+  position:absolute;inset:0;display:none;flex-direction:column;
+  background:#050505;z-index:40;
+}
+.agent-view.active{display:flex}
+#agentScreenshot{
+  flex:1;width:100%;object-fit:contain;background:#000;
+  border-bottom:1px solid #1a1a1a;
+}
+.agent-log{
+  flex:none;max-height:140px;overflow-y:auto;padding:10px 16px;
+  font-size:12.5px;color:#aaa;line-height:1.6;background:#0a0a0a;
+}
+.agent-log .step{padding:3px 0;border-bottom:1px solid #161616}
+.agent-log .step:last-child{border-bottom:none;color:#fff}
+.agent-log .step.err{color:#f87171}
+.agent-help{
+  display:none;flex:none;padding:12px 16px;background:#141414;
+  border-top:1px solid #262626;
+}
+.agent-help.show{display:block}
+.agent-help p{font-size:13px;color:#e8e8e8;margin-bottom:8px}
+.agent-help-row{display:flex;gap:8px}
+.agent-help-row input{
+  flex:1;padding:8px 12px;background:#0a0a0a;border:1px solid #262626;
+  border-radius:8px;color:#e8e8e8;font-size:13px;
+}
+.agent-help-row button{
+  padding:8px 16px;border-radius:8px;background:#fff;color:#000;
+  font-weight:600;font-size:12px;
+}
+
+/* Agentic command bar (bottom, above nothing — main way to trigger agent mode) */
+.agent-bar{
+  flex:none;display:flex;align-items:center;gap:10px;
+  padding:10px 16px;background:#0a0a0a;border-top:1px solid #1a1a1a;
+  color:#666;
+}
+.agent-bar input{
+  flex:1;background:#111;border:1px solid #222;border-radius:20px;
+  padding:9px 16px;color:#e8e8e8;font-size:13px;
+}
+.agent-bar input:focus{border-color:#333}
+.agent-bar button{
+  padding:8px 18px;border-radius:20px;font-size:12px;font-weight:600;
+  background:#1a1a1a;border:1px solid #262626;color:#e8e8e8;
+  transition:all .12s ease;flex:none;
+}
+.agent-bar button:hover{background:#222}
+#agentStopBtn{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.25);color:#f87171}
+
 /* Add shortcut modal */
 .modal-overlay{
   position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.7);
@@ -342,6 +396,27 @@ button{cursor:pointer}
       </div>
       <div class="shortcuts" id="shortcuts"></div>
     </div>
+
+    <!-- Agentic live view — replaces the iframe while an agent task runs -->
+    <div class="agent-view" id="agentView">
+      <img id="agentScreenshot" alt="Live agent browser">
+      <div class="agent-log" id="agentLog"></div>
+      <div class="agent-help" id="agentHelp">
+        <p id="agentHelpText"></p>
+        <div class="agent-help-row">
+          <input type="text" id="agentHelpInput" placeholder="Type your answer or instruction…" onkeydown="if(event.key==='Enter')agentSendHelp()">
+          <button onclick="agentSendHelp()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agentic command bar -->
+  <div class="agent-bar" id="agentBar">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="10" r="1"/><circle cx="16" cy="10" r="1"/></svg>
+    <input type="text" id="agentTaskInput" placeholder="Ask Stellar to do something — e.g. 'sign up for a free account on cerebras.ai'" onkeydown="if(event.key==='Enter')agentStart()">
+    <button id="agentGoBtn" onclick="agentStart()">Go</button>
+    <button id="agentStopBtn" onclick="agentStop()" style="display:none">Stop</button>
   </div>
 </div>
 
@@ -657,6 +732,125 @@ window.addEventListener('message', function(e) {
     loadUrl(e.data.url);
   }
 });
+
+/* ========== AGENTIC MODE — Sonar drives a real browser live ========== */
+let agentSessionId = null;
+let agentReader = null;
+let agentPendingHelp = null;
+
+function agentLogLine(cls, text) {
+  const log = document.getElementById('agentLog');
+  const line = document.createElement('div');
+  line.className = 'step' + (cls ? ' ' + cls : '');
+  line.textContent = text;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function agentShowScreenshot(b64) {
+  document.getElementById('agentScreenshot').src = 'data:image/png;base64,' + b64;
+}
+
+async function agentStart(extraContext, resumeId) {
+  const input = document.getElementById('agentTaskInput');
+  const task = (extraContext || input.value).trim();
+  if (!task) return;
+  if (!extraContext) input.value = '';
+
+  document.getElementById('agentView').classList.add('active');
+  if (!resumeId) document.getElementById('agentLog').innerHTML = '';
+  document.getElementById('agentHelp').classList.remove('show');
+  document.getElementById('agentGoBtn').style.display = 'none';
+  document.getElementById('agentStopBtn').style.display = 'inline-block';
+  agentLogLine('', resumeId ? 'Resuming…' : 'Starting: ' + task);
+
+  try {
+    const res = await fetch('/api/agent/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ task, resumeSessionId: resumeId || undefined })
+    });
+    if (!res.ok || !res.body) {
+      const j = await res.json().catch(() => ({}));
+      agentLogLine('err', j.error || 'Could not start agent.');
+      agentDone();
+      return;
+    }
+    agentReader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await agentReader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const events = buf.split('\n\n'); buf = events.pop();
+      for (const ev of events) {
+        for (const line of ev.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          const raw = line.slice(5).trim();
+          if (!raw || raw === '[DONE]') continue;
+          let evt; try { evt = JSON.parse(raw); } catch { continue; }
+          agentHandleEvent(evt);
+        }
+      }
+    }
+  } catch (e) {
+    agentLogLine('err', 'Connection error: ' + e.message);
+  }
+  agentDone();
+}
+
+function agentHandleEvent(evt) {
+  if (evt.type === 'session') { agentSessionId = evt.sessionId; return; }
+  if (evt.type === 'thought' && evt.text) agentLogLine('', evt.text);
+  if (evt.type === 'action') {
+    agentLogLine('', '→ ' + (evt.action || 'action'));
+    if (evt.screenshot) agentShowScreenshot(evt.screenshot);
+  }
+  if (evt.type === 'screenshot' && evt.screenshot) agentShowScreenshot(evt.screenshot);
+  if (evt.type === 'action_error') agentLogLine('err', evt.message);
+  if (evt.type === 'error') agentLogLine('err', evt.message);
+  if (evt.type === 'done') agentLogLine('', '✓ ' + evt.message);
+  if (evt.type === 'needs_help') {
+    if (evt.screenshot) agentShowScreenshot(evt.screenshot);
+    agentLogLine('', '⏸ Paused — needs your help');
+    agentPendingHelp = evt.reason;
+    document.getElementById('agentHelpText').textContent = evt.message;
+    document.getElementById('agentHelp').classList.add('show');
+    document.getElementById('agentHelpInput').focus();
+  }
+}
+
+function agentDone() {
+  document.getElementById('agentGoBtn').style.display = 'inline-block';
+  document.getElementById('agentStopBtn').style.display = 'none';
+}
+
+function agentSendHelp() {
+  const input = document.getElementById('agentHelpInput');
+  const helpText = input.value.trim();
+  if (!helpText) return;
+  input.value = '';
+  document.getElementById('agentHelp').classList.remove('show');
+  agentLogLine('', 'You: ' + helpText);
+  const resumeId = agentSessionId;
+  agentStart('The user just handled the blocker and says: "' + helpText + '". Take a screenshot and continue from the current page state.', resumeId);
+}
+
+async function agentStop() {
+  if (agentSessionId) {
+    fetch('/api/agent/stop', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: agentSessionId })
+    }).catch(() => {});
+  }
+  if (agentReader) { try { await agentReader.cancel(); } catch {} }
+  agentSessionId = null;
+  document.getElementById('agentView').classList.remove('active');
+  agentDone();
+  toast('Agent stopped');
+}
 
 /* ========== INIT ========== */
 renderShortcuts();
