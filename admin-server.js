@@ -262,17 +262,65 @@ function mask(k) { return k ? k.slice(0, 4) + '••••' + k.slice(-4) : '';
    out of that provider's streaming format. Everything is re-emitted to the
    browser as OpenAI-style SSE, so the website only ever parses one format. */
 
+/* The frontend builds multimodal content as an OpenAI-shaped array:
+   [{type:'text', text}, {type:'image_url', image_url:{url:'data:...;base64,...'}}]
+   Anthropic and Gemini expect completely different shapes for image data —
+   without this conversion, only OpenAI-compatible providers can actually see
+   uploaded images; Claude and Gemini silently receive nothing usable. */
+function dataUriParts(dataUri) {
+  const m = /^data:([^;]+);base64,(.+)$/.exec(dataUri || '');
+  return m ? { mime: m[1], data: m[2] } : null;
+}
+
+function normalizeContent(fmt, content) {
+  if (typeof content === 'string' || !Array.isArray(content)) return content;
+
+  if (fmt === 'anthropic') {
+    return content.map(p => {
+      if (p.type === 'text') return { type: 'text', text: p.text };
+      if (p.type === 'image_url') {
+        const d = dataUriParts(p.image_url && p.image_url.url);
+        if (d) return { type: 'image', source: { type: 'base64', media_type: d.mime, data: d.data } };
+      }
+      if (p.type === 'video_url') return { type: 'text', text: '[Video link: ' + (p.video_url && p.video_url.url) + ' — Claude cannot view video directly]' };
+      return { type: 'text', text: '' };
+    }).filter(p => p.type !== 'text' || p.text);
+  }
+
+  if (fmt === 'gemini') {
+    return content.map(p => {
+      if (p.type === 'text') return { text: p.text };
+      if (p.type === 'image_url') {
+        const d = dataUriParts(p.image_url && p.image_url.url);
+        if (d) return { inline_data: { mime_type: d.mime, data: d.data } };
+      }
+      if (p.type === 'video_url') {
+        const url = p.video_url && p.video_url.url;
+        return { file_data: { file_uri: url } }; // Gemini supports YouTube URLs natively here
+      }
+      return { text: '' };
+    }).filter(p => !('text' in p) || p.text);
+  }
+
+  // OpenAI-compatible — already in the right shape, but strip video_url (unsupported) to text
+  return content.map(p => {
+    if (p.type === 'video_url') return { type: 'text', text: '[Video link: ' + (p.video_url && p.video_url.url) + ']' };
+    return p;
+  });
+}
+
 function buildUpstream(providerCfg, model, system, messages) {
   const fmt = providerCfg.format;
   const key = providerCfg.apiKey;
 
   if (fmt === 'anthropic') {
+    const normMessages = messages.map(m => ({ role: m.role, content: normalizeContent('anthropic', m.content) }));
     return {
       url: 'https://api.anthropic.com/v1/messages',
       init: {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model, stream: true, max_tokens: 1024, system, messages })
+        body: JSON.stringify({ model, stream: true, max_tokens: 1024, system, messages: normMessages })
       }
     };
   }
@@ -284,7 +332,10 @@ function buildUpstream(providerCfg, model, system, messages) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: system }] },
-          contents: messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+          contents: messages.map(m => {
+            const parts = typeof m.content === 'string' ? [{ text: m.content }] : normalizeContent('gemini', m.content);
+            return { role: m.role === 'assistant' ? 'model' : 'user', parts };
+          }),
           tools: [{ google_search: {} }]
         })
       }
@@ -298,7 +349,7 @@ function buildUpstream(providerCfg, model, system, messages) {
       headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
       body: JSON.stringify({
         model, stream: true, max_tokens: 1024, temperature: 0.7,
-        messages: [{ role: 'system', content: system }, ...messages]
+        messages: [{ role: 'system', content: system }, ...messages.map(m => ({ role: m.role, content: normalizeContent('openai', m.content) }))]
       })
     }
   };
@@ -320,6 +371,93 @@ function isMultimodal(messages) {
     const t = (typeof m.content === 'string' ? m.content : '').toLowerCase();
     return /https?:\/\//.test(t) || /\.(jpg|jpeg|png|gif|webp|mp4|mov|avi|webm)(\?|$| )/i.test(t);
   });
+}
+
+const YOUTUBE_RE = /(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/i;
+
+function extractFirstUrl(text) {
+  const m = /https?:\/\/[^\s)>\]]+/i.exec(text || '');
+  return m ? m[0] : null;
+}
+
+/* Fetch a linked image and inline it as base64 so vision models can actually see it —
+   pasting a link should work the same as uploading the file. Capped at 15MB, 10s timeout,
+   so one bad link can never hang a whole chat request. */
+async function urlToImagePart(url) {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return null;
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.startsWith('image/')) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 15 * 1024 * 1024) return null;
+    return { type: 'image_url', image_url: { url: 'data:' + ct + ';base64,' + buf.toString('base64') } };
+  } catch { return null; }
+}
+
+/* Rewrite the last user message in place if it's a plain string containing a link the AI
+   should actually view: a direct image link gets fetched and inlined; a YouTube link gets
+   passed through natively (Gemini supports this without downloading anything). Other video
+   file links (arbitrary .mp4 etc.) are left as text — auto-downloading arbitrary video files
+   server-side isn't something we do; ask the user to upload the file directly instead. */
+/* Fetch a linked webpage and strip it down to plain readable text so the AI can
+   actually read it — no browser involved, just a fetch + tag strip. Capped and
+   timed-out the same way as the image fetch above. */
+function stripHtmlToText(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function urlToPageText(url) {
+  try {
+    const r = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; MistBot/1.0)' }
+    });
+    if (!r.ok) return null;
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('text/html')) return null;
+    const html = await r.text();
+    const text = stripHtmlToText(html).slice(0, 6000);
+    return text || null;
+  } catch { return null; }
+}
+
+async function resolveLinkedMedia(messages) {
+  const last = messages[messages.length - 1];
+  if (!last || typeof last.content !== 'string') return messages;
+  const url = extractFirstUrl(last.content);
+  if (!url) return messages;
+
+  if (YOUTUBE_RE.test(url)) {
+    last.content = [
+      { type: 'text', text: last.content },
+      { type: 'video_url', video_url: { url } }
+    ];
+    return messages;
+  }
+
+  // Any other link: attempt to fetch and inline it as an image — urlToImagePart's own
+  // content-type check safely bails out if it isn't actually an image.
+  const imgPart = await urlToImagePart(url);
+  if (imgPart) {
+    last.content = [{ type: 'text', text: last.content }, imgPart];
+    return messages;
+  }
+
+  // Not an image either — try reading it as a webpage so the AI can answer questions about it.
+  const pageText = await urlToPageText(url);
+  if (pageText) {
+    last.content = last.content + '\n\n[Page content fetched from ' + url + ']:\n' + pageText;
+  }
+  return messages;
 }
 
 /* Read API key with env var fallback. Env vars survive Render restarts,
@@ -424,13 +562,16 @@ async function handleChat(req, res) {
   user.messages++;
 
   const assistant = ['pluto','sonar','omni'].includes(body.assistant) ? body.assistant : 'pluto';
-  const messages = body.messages.slice(-8).map(m => {
+  let messages = body.messages.slice(-8).map(m => {
     // Truncate very long messages to prevent token limit errors
     if (typeof m.content === 'string' && m.content.length > 4000) {
       return { role: m.role, content: m.content.slice(0, 4000) + '\n\n[Content truncated for length]' };
     }
     return m;
   });
+  // If the user pasted a link to an image or video, fetch/attach it so the AI can actually see it —
+  // capped, timed-out, and only touches the latest message, so it never slows down a normal chat.
+  messages = await resolveLinkedMedia(messages);
   
   // If web search requested, add Gemini (with Google Search) as first target
   const wantsWeb = body.webSearch === true;
