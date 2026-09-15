@@ -76,6 +76,8 @@ function blankData() {
                     models: ['claude-fable-5-1', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] },
       gemini:     { label: 'Google Gemini',    format: 'gemini',    baseUrl: '', apiKey: '',
                     models: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.6-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
+      geminialt:  { label: 'Google Gemini (alt account)', format: 'gemini', baseUrl: '', apiKey: '',
+                    models: ['gemini-3.1-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3.8-flash'] },
       xai:        { label: 'xAI (Grok)',       format: 'openai',    baseUrl: 'https://api.x.ai/v1/chat/completions', apiKey: '',
                     models: ['grok-4.5', 'grok-3', 'grok-3-mini', 'grok-2'] },
       mistral:    { label: 'Mistral',          format: 'openai',    baseUrl: 'https://api.mistral.ai/v1/chat/completions', apiKey: '',
@@ -122,11 +124,11 @@ function blankData() {
       pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/v1/chat/completions', apiKey: 'dummy', models: ['openai', 'mistral', 'llama'] }
     },
     routing: {
-      pluto: { provider: 'groq', model: 'openai/gpt-oss-20b', fallbacks: [
+      pluto: { provider: 'geminialt', model: 'gemini-3.1-flash-lite', fallbacks: [
+        { provider: 'groq', model: 'openai/gpt-oss-20b' },
         { provider: 'groq', model: 'openai/gpt-oss-120b' },
         { provider: 'cerebras', model: 'gpt-oss-120b' },
         { provider: 'gemini', model: 'gemini-3.8-flash' },
-        { provider: 'gemini', model: 'gemini-3.6-flash' },
         { provider: 'pollinations', model: 'openai' }
       ] },
       /* Mist 2 has two chains:
@@ -827,7 +829,7 @@ async function handleGenerate(req, res) {
     const encoded = encodeURIComponent(body.prompt);
     const seed = Math.floor(Math.random() * 999999);
     const polUrl = 'https://image.pollinations.ai/prompt/' + encoded + '?width=1024&height=768&seed=' + seed + '&nologo=true&model=flux';
-    const r = await fetch(polUrl, { signal: AbortSignal.timeout(20000) });
+    const r = await fetch(polUrl, { signal: AbortSignal.timeout(35000) });
     if (r.ok) {
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length > 1000) {
