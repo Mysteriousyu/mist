@@ -126,13 +126,25 @@ function blankData() {
       pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/v1/chat/completions', apiKey: 'dummy', models: ['openai', 'mistral', 'llama'] }
     },
     routing: {
-      pluto: { provider: 'nim2', model: 'deepseek-ai/deepseek-v4-flash-0731', fallbacks: [
-        { provider: 'groq', model: 'openai/gpt-oss-20b' },
-        { provider: 'groq', model: 'openai/gpt-oss-120b' },
-        { provider: 'cerebras', model: 'gpt-oss-120b' },
-        { provider: 'gemini', model: 'gemini-3.8-flash' },
-        { provider: 'pollinations', model: 'openai' }
-      ] },
+      /* Pluto splits by question type: coding questions get DeepSeek (NIM),
+         everyday/simple questions get Groq (fastest, best for quick chat). */
+      pluto: {
+        casualChain: [
+          { provider: 'groq', model: 'openai/gpt-oss-20b' },
+          { provider: 'groq', model: 'openai/gpt-oss-120b' },
+          { provider: 'cerebras', model: 'gpt-oss-120b' },
+          { provider: 'gemini', model: 'gemini-3.8-flash' },
+          { provider: 'pollinations', model: 'openai' }
+        ],
+        codingChain: [
+          { provider: 'nim2', model: 'deepseek-ai/deepseek-v4-flash-0731' },
+          { provider: 'groq', model: 'openai/gpt-oss-120b' },
+          { provider: 'cerebras', model: 'gpt-oss-120b' },
+          { provider: 'gemini', model: 'gemini-3.8-flash' },
+          { provider: 'pollinations', model: 'openai' }
+        ],
+        fallbacks: []
+      },
       /* Mist 2 has two chains:
          - codingChain: used for plain text / coding (up to 6 keys)
          - multimodalChain: used when the user sends media or a URL  */
@@ -474,6 +486,18 @@ function keyFor(providerId) {
 
 /* Resolve an assistant + messages into an ordered list of {providerCfg,model,format} to try.
    Mist 2 uses codingChain or multimodalChain depending on content. Max 6 targets. */
+/* Lightweight heuristic: does the latest message look like a coding question?
+   Looks for code fences, common programming keywords, and file-extension mentions —
+   good enough to route Pluto to a coding-capable model without needing a full classifier call. */
+function isCodingQuestion(messages) {
+  const last = messages[messages.length - 1];
+  const text = (typeof last?.content === 'string' ? last.content : '').toLowerCase();
+  if (/```/.test(text)) return true;
+  const codeWords = /\b(function|variable|class|api|json|array|error|bug|debug|compile|syntax|regex|python|javascript|typescript|react|node\.?js|html|css|sql|git|npm|package\.json|endpoint|backend|frontend|algorithm|recursion|loop|for loop|while loop|null|undefined|exception|stack trace|refactor|css selector|dom|async|await|promise)\b/.test(text);
+  const codeSymbols = /[{}();]/.test(text) && text.length < 500;
+  return codeWords || codeSymbols;
+}
+
 function resolveTargets(assistant, messages) {
   const route = DB.routing[assistant];
   if (!route) return [];
@@ -485,6 +509,17 @@ function resolveTargets(assistant, messages) {
       ? (route.multimodalChain || [])
       : (route.codingChain || [{ provider: route.provider, model: route.model }]);
     // append global fallbacks after chain
+    chain = [...chain, ...(route.fallbacks || [])];
+  } else if (assistant === 'pluto') {
+    if (route.codingChain || route.casualChain) {
+      const useCoding = isCodingQuestion(messages || []);
+      chain = useCoding
+        ? (route.codingChain || route.casualChain || [])
+        : (route.casualChain || route.codingChain || []);
+    } else {
+      // Old saved shape from before the coding/casual split existed — use it as-is either way
+      chain = [{ provider: route.provider, model: route.model }];
+    }
     chain = [...chain, ...(route.fallbacks || [])];
   } else {
     chain = [{ provider: route.provider, model: route.model }, ...(route.fallbacks || [])];
@@ -1812,17 +1847,13 @@ function renderKeys(){
 
   /* Pluto card */
   var r1 = R.pluto || {};
-  var p1 = STATE.providers[r1.provider];
-  var m1ModelInput = (p1 && p1.models && Array.isArray(p1.models))
-    ? '<select id="m1-m">'+modelOpts(r1.provider, r1.model)+'</select>'
-    : '<input id="m1-m" value="'+esc(r1.model||'')+'" placeholder="e.g. gemini-3.6-flash">';
   html+='<div class="card" style="border-left:3px solid var(--brand)">'
     +'<h3 style="margin:0 0 4px">Pluto</h3>'
-    +'<p class="muted" style="margin:0 0 12px">Quick everyday assistant. Responds fast.</p>'
-    +'<label style="font-weight:600;font-size:12px">Provider</label>'
-    +'<select id="m1-p" style="margin-bottom:8px">'+provOpts(r1.provider)+'</select>'
-    +'<label style="font-weight:600;font-size:12px">Model ID</label>'
-    +m1ModelInput
+    +'<p class="muted" style="margin:0 0 12px">Quick everyday assistant. Splits by question type.</p>'
+    +'<p class="muted" style="font-size:11.5px;margin:0 0 8px"><b>Everyday chain</b> — simple/casual questions (up to 6 models):</p>'
+    +'<div id="m1c-rows">'+chainRows('m1c',r1.casualChain)+'</div><button class="btn sm" data-add-row="m1c" style="margin:4px 0 10px">+ Add model</button>'
+    +'<p class="muted" style="font-size:11.5px;margin:0 0 8px"><b>Coding chain</b> — detected coding questions:</p>'
+    +'<div id="m1x-rows">'+chainRows('m1x',r1.codingChain)+'</div><button class="btn sm" data-add-row="m1x" style="margin:4px 0">+ Add model</button>'
     +'<button class="btn grad" style="width:100%;margin-top:12px" id="saveM1">Save Pluto</button></div>';
 
   /* Sonar card */
@@ -1951,7 +1982,7 @@ document.addEventListener('click',function(e){
   el=t.closest('[data-del-prov]');if(el){if(confirm('Remove?'))api('/provider/delete',{id:el.dataset.delProv}).then(function(){loadState();});return;}
   if(t.id==='addProvBtn'){var id=prompt('Provider id (e.g. groq, together)');if(id)api('/provider',{id:id.trim(),label:id,format:'openai',baseUrl:'',apiKey:''}).then(function(){loadState();});return;}
   /* mist 1 routing */
-  if(t.id==='saveM1'){api('/routing',{routing:{pluto:{provider:$('#m1-p').value,model:$('#m1-m').value.trim(),fallbacks:[]}}}).then(function(){toast('Pluto saved');loadState();});return;}
+  if(t.id==='saveM1'){api('/routing',{routing:{pluto:{casualChain:collectChain('m1c'),codingChain:collectChain('m1x'),fallbacks:[]}}}).then(function(){toast('Pluto saved');loadState();});return;}
   /* sonar routing */
   if(t.id==='saveM2'){api('/routing',{routing:{sonar:{codingChain:collectChain('m2c'),multimodalChain:collectChain('m2m'),fallbacks:collectChain('m2f')}}}).then(function(){toast('Sonar saved');loadState();});return;}
   /* omni routing */
