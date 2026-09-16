@@ -70,6 +70,8 @@ function blankData() {
                     models: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3-32b'] },
       nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
                     models: ['google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
+      nim2:       { label: 'NVIDIA NIM (2nd key)', format: 'openai',  baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
+                    models: ['deepseek-ai/deepseek-v4-flash-0731', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct'] },
       openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '',
                     models: ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-4o', 'gpt-4o-mini', 'o1', 'o1-mini', 'o3-mini'] },
       anthropic:  { label: 'Anthropic (Claude)',format: 'anthropic', baseUrl: '', apiKey: '',
@@ -124,7 +126,7 @@ function blankData() {
       pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/v1/chat/completions', apiKey: 'dummy', models: ['openai', 'mistral', 'llama'] }
     },
     routing: {
-      pluto: { provider: 'geminialt', model: 'gemini-3.1-flash-lite', fallbacks: [
+      pluto: { provider: 'nim2', model: 'deepseek-ai/deepseek-v4-flash-0731', fallbacks: [
         { provider: 'groq', model: 'openai/gpt-oss-20b' },
         { provider: 'groq', model: 'openai/gpt-oss-120b' },
         { provider: 'cerebras', model: 'gpt-oss-120b' },
