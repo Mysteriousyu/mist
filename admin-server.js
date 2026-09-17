@@ -981,9 +981,38 @@ async function handleGenerate(req, res) {
   const user = touchUser(userId);
   if (user.banned) return send(res, 403, { error: 'Suspended' });
 
+  const geminiKey = keyFor('gemini');
   const cometKey = keyFor('cometapi');
 
-  // ==================== 1. CometAPI (your key, 500+ models, best quality) ====================
+  // ==================== 1. Google Gemini "Nano Banana 2" (gemini-3.1-flash-image) ====================
+  // Uses the SAME key already powering Gemini chat elsewhere — no new signup, no new env var.
+  // Free tier: ~50-500 requests/day via Google AI Studio, no credit card, native 4K, no watermark.
+  if (geminiKey) {
+    try {
+      const r = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=' + encodeURIComponent(geminiKey),
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: body.prompt }] }],
+            generationConfig: { responseModalities: ['IMAGE'] }
+          }),
+          signal: AbortSignal.timeout(30000)
+        }
+      );
+      if (r.ok) {
+        const j = await r.json();
+        const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+        const imgPart = parts && parts.find(p => p.inlineData);
+        if (imgPart) {
+          return send(res, 200, { image: 'data:' + imgPart.inlineData.mimeType + ';base64,' + imgPart.inlineData.data, provider: 'gemini-nano-banana-2' });
+        }
+      } else { console.error('Gemini image error:', (await r.text().catch(() => '')).slice(0, 300)); }
+    } catch (e) { console.error('Gemini image failed:', e.message); }
+  }
+
+  // ==================== 2. CometAPI (your key, 500+ models, best quality) ====================
   if (cometKey) {
     try {
       const r = await fetch('https://api.cometapi.com/v1/images/generations', {
@@ -1002,7 +1031,7 @@ async function handleGenerate(req, res) {
     } catch (e) { console.error('CometAPI image failed:', e.message); }
   }
 
-  // ==================== 2. Pollinations (FREE, no key, always works) ====================
+  // ==================== 3. Pollinations (FREE, no key, always works) ====================
   try {
     const encoded = encodeURIComponent(body.prompt);
     const seed = Math.floor(Math.random() * 999999);
