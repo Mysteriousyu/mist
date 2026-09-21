@@ -71,7 +71,7 @@ function blankData() {
       nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
                     models: ['google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
       nim2:       { label: 'NVIDIA NIM (2nd key)', format: 'openai',  baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
-                    models: ['deepseek-ai/deepseek-v4-flash-0731', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct'] },
+                    models: ['nvidia/nemotron-3.5-lightning-30b-a3b', 'deepseek-ai/deepseek-v4-flash-0731', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct'] },
       openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '',
                     models: ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-4o', 'gpt-4o-mini', 'o1', 'o1-mini', 'o3-mini'] },
       anthropic:  { label: 'Anthropic (Claude)',format: 'anthropic', baseUrl: '', apiKey: '',
@@ -137,7 +137,7 @@ function blankData() {
           { provider: 'pollinations', model: 'openai' }
         ],
         codingChain: [
-          { provider: 'nim2', model: 'deepseek-ai/deepseek-v4-flash-0731' },
+          { provider: 'nim2', model: 'nvidia/nemotron-3.5-lightning-30b-a3b' },
           { provider: 'groq', model: 'openai/gpt-oss-120b' },
           { provider: 'cerebras', model: 'gpt-oss-120b' },
           { provider: 'gemini', model: 'gemini-3.8-flash' },
@@ -362,7 +362,7 @@ function buildUpstream(providerCfg, model, system, messages) {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
       body: JSON.stringify({
-        model, stream: true, max_tokens: 1024, temperature: 0.7,
+        model, stream: true, max_tokens: 1024,
         messages: [{ role: 'system', content: system }, ...messages.map(m => ({ role: m.role, content: normalizeContent('openai', m.content) }))]
       })
     }
@@ -763,6 +763,8 @@ async function handleAdminApi(req, res, urlPath) {
       users: Object.values(DB.users).sort((a, b) => b.lastSeen - a.lastSeen),
       chats: Object.values(DB.chats).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 500),
       projects: Object.values(DB.projects).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
+      corrections: (DB.corrections || []).slice().reverse(),
+      knowledgeBase: (DB.knowledgeBase || []).slice().reverse(),
       stats: {
         users: Object.keys(DB.users).length,
         chats: Object.keys(DB.chats).length,
@@ -770,6 +772,38 @@ async function handleAdminApi(req, res, urlPath) {
         banned: Object.values(DB.users).filter(u => u.banned).length
       }
     });
+  }
+
+  if (urlPath === '/admin/knowledge' && req.method === 'POST') {
+    const b = await readJson(req);
+    if (!DB.knowledgeBase) DB.knowledgeBase = [];
+    if (b.action === 'add' && b.content) {
+      DB.knowledgeBase.push({ id: uid(), content: b.content.slice(0, 1000), tags: (b.tags || '').slice(0, 200), ts: nowMs() });
+      if (DB.knowledgeBase.length > 100) DB.knowledgeBase = DB.knowledgeBase.slice(-100);
+      save();
+      return send(res, 200, { ok: true });
+    }
+    if (b.action === 'delete' && b.id) {
+      DB.knowledgeBase = DB.knowledgeBase.filter(e => e.id !== b.id);
+      save();
+      return send(res, 200, { ok: true });
+    }
+    return send(res, 400, { error: 'Unknown action' });
+  }
+
+  if (urlPath === '/admin/corrections' && req.method === 'POST') {
+    const b = await readJson(req);
+    if (b.action === 'delete' && b.id) {
+      DB.corrections = (DB.corrections || []).filter(c => c.id !== b.id);
+      save();
+      return send(res, 200, { ok: true });
+    }
+    if (b.action === 'clear') {
+      DB.corrections = [];
+      save();
+      return send(res, 200, { ok: true });
+    }
+    return send(res, 400, { error: 'Unknown action' });
   }
 
   if (urlPath === '/admin/provider' && req.method === 'POST') {
@@ -1449,7 +1483,7 @@ const server = http.createServer(async (req, res) => {
     if (body.vote === 'down' && body.correction) {
       if (!DB.corrections) DB.corrections = [];
       DB.corrections.push({
-        userId, question: (body.question || '').slice(0, 500),
+        id: uid(), userId, question: (body.question || '').slice(0, 500),
         wrongAnswer: (body.wrongAnswer || '').slice(0, 500),
         correction: (body.correction || '').slice(0, 1000),
         assistant: body.assistant || 'unknown', ts: nowMs()
@@ -1748,6 +1782,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     <div class="pane" id="pane-users"></div>
     <div class="pane" id="pane-chats"></div>
     <div class="pane" id="pane-projects"></div>
+    <div class="pane" id="pane-learning"></div>
     <div class="pane" id="pane-settings"></div>
   </div>
 </div>
@@ -1787,7 +1822,7 @@ $('#btnLogout').onclick = function(){fetch('/admin/logout').then(function(){show
 $('#dlgClose').onclick = function(){$('#dlg').close();};
 
 /* ---- tabs ---- */
-var TABS = [['keys','Keys & Models'],['users','Users'],['chats','Chats'],['projects','Projects'],['settings','Settings']];
+var TABS = [['keys','Keys & Models'],['users','Users'],['chats','Chats'],['projects','Projects'],['learning','Learning'],['settings','Settings']];
 function renderTabs(){
   $('#tabsBar').innerHTML = TABS.map(function(t){return '<button class="tab'+(t[0]==='keys'?' on':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>';}).join('');
 }
@@ -1804,7 +1839,7 @@ function loadState(){
     STATE=d;
     var s=d.stats;
     $('#stats').innerHTML=stat(s.users,'Users')+stat(s.chats,'Chats')+stat(s.projects,'Projects')+stat(s.banned,'Banned');
-    renderKeys();renderUsers();renderChats();renderProjects();renderSettings();
+    renderKeys();renderUsers();renderChats();renderProjects();renderLearning();renderSettings();
   });
 }
 function stat(n,l){return '<div class="stat"><b>'+n+'</b><span>'+l+'</span></div>';}
@@ -1995,6 +2030,43 @@ function renderProjects(){
 }
 
 /* ---- settings ---- */
+function renderLearning(){
+  var kb = STATE.knowledgeBase || [];
+  var corr = STATE.corrections || [];
+
+  var kbList = kb.length
+    ? kb.map(function(e){
+        return '<div class="row" style="align-items:flex-start;margin-top:8px;padding-bottom:8px;border-bottom:1px solid var(--border,#222)">'
+          + '<div style="flex:1;font-size:13px">' + esc(e.content) + (e.tags ? '<div class="mini" style="margin-top:2px">' + esc(e.tags) + '</div>' : '') + '</div>'
+          + '<button class="btn sm danger" data-del-kb="' + e.id + '">Delete</button></div>';
+      }).join('')
+    : '<p class="mini">No knowledge base entries yet — add facts or rules below that every AI should always follow.</p>';
+
+  var corrList = corr.length
+    ? corr.map(function(c){
+        return '<div class="row" style="align-items:flex-start;margin-top:8px;padding-bottom:8px;border-bottom:1px solid var(--border,#222)">'
+          + '<div style="flex:1;font-size:13px">'
+          + '<div class="mini">' + esc(c.assistant || 'unknown') + ' · ' + new Date(c.ts).toLocaleDateString() + '</div>'
+          + '<div style="margin-top:2px"><b>Q:</b> ' + esc(c.question || '(none)') + '</div>'
+          + '<div style="margin-top:2px;color:var(--danger,#f87171)"><b>Wrong:</b> ' + esc(c.wrongAnswer || '(none)') + '</div>'
+          + '<div style="margin-top:2px;color:var(--ok,#4ade80)"><b>Correct:</b> ' + esc(c.correction) + '</div>'
+          + '</div><button class="btn sm danger" data-del-corr="' + c.id + '">Delete</button></div>';
+      }).join('')
+    : '<p class="mini">No corrections yet — these appear automatically when a user thumbs-downs a reply and teaches the AI the right answer.</p>';
+
+  $('#pane-learning').innerHTML =
+      '<div class="card"><h3 style="margin-top:0">Knowledge base</h3>'
+    + '<p class="mini" style="margin-bottom:10px">Facts or rules every AI always follows, injected into every response.</p>'
+    + '<textarea id="kbNew" placeholder="e.g. Mist was created by Amit at GLIM" style="width:100%;min-height:60px"></textarea>'
+    + '<input id="kbTags" placeholder="Optional tags (comma separated)" style="margin-top:6px">'
+    + '<button class="btn grad sm" style="margin-top:8px" id="kbAddBtn">Add entry</button>'
+    + '<div id="kbList" style="margin-top:6px">' + kbList + '</div></div>'
+    + '<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Corrections</h3>'
+    + '<p class="mini" style="margin-bottom:10px">Mistakes users have taught the AI to fix. The most recent 15 are shown to every AI as context.</p>'
+    + (corr.length ? '<button class="btn sm danger" id="corrClearBtn" style="margin-bottom:8px">Clear all</button>' : '')
+    + '<div id="corrList">' + corrList + '</div></div>';
+}
+
 function renderSettings(){
   $('#pane-settings').innerHTML='<div class="card"><h3 style="margin-top:0">Change admin password</h3>'
     +'<input type="password" id="newpw" placeholder="At least 4 characters">'
@@ -2009,6 +2081,18 @@ document.addEventListener('click',function(e){
   /* providers — simplified: only key field exists in new layout */
   el=t.closest('[data-save-prov]');if(el){var id=el.dataset.saveProv;var key=$('#pk-'+id).value;api('/provider',{id:id,apiKey:key}).then(function(){toast('Key saved');loadState();});return;}
   el=t.closest('[data-del-prov]');if(el){if(confirm('Remove?'))api('/provider/delete',{id:el.dataset.delProv}).then(function(){loadState();});return;}
+  /* knowledge base */
+  if(t.id==='kbAddBtn'){
+    var content=$('#kbNew').value.trim();
+    if(!content){toast('Enter something first');return;}
+    var tags=$('#kbTags').value.trim();
+    api('/knowledge',{action:'add',content:content,tags:tags}).then(function(){toast('Added to knowledge base');loadState();});
+    return;
+  }
+  el=t.closest('[data-del-kb]');if(el){if(confirm('Delete this entry?'))api('/knowledge',{action:'delete',id:el.dataset.delKb}).then(function(){toast('Deleted');loadState();});return;}
+  /* corrections */
+  if(t.id==='corrClearBtn'){if(confirm('Clear ALL corrections? This cannot be undone.'))api('/corrections',{action:'clear'}).then(function(){toast('Cleared');loadState();});return;}
+  el=t.closest('[data-del-corr]');if(el){if(confirm('Delete this correction?'))api('/corrections',{action:'delete',id:el.dataset.delCorr}).then(function(){toast('Deleted');loadState();});return;}
   if(t.id==='addProvBtn'){var id=prompt('Provider id (e.g. groq, together)');if(id)api('/provider',{id:id.trim(),label:id,format:'openai',baseUrl:'',apiKey:''}).then(function(){loadState();});return;}
   /* mist 1 routing */
   if(t.id==='saveM1'){api('/routing',{routing:{pluto:{casualChain:collectChain('m1c'),codingChain:collectChain('m1x'),fallbacks:[]}}}).then(function(){toast('Pluto saved');loadState();});return;}
