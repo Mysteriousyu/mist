@@ -151,8 +151,8 @@ function blankData() {
       sonar: {
         codingChain: [
           { provider: 'cometapi', model: 'claude-fable-5-1' },
-          { provider: 'cometapi', model: 'gpt-6-astra' },
-          { provider: 'cometapi', model: 'minimax-m3' },
+          { provider: 'cometapi', model: 'claude-opus-5' },
+          { provider: 'cometapi', model: 'claude-opus-4-6' },
           { provider: 'cerebras', model: 'gpt-oss-120b' },
           { provider: 'gemini', model: 'gemini-3.8-flash' },
           { provider: 'pollinations', model: 'openai' }
@@ -1082,6 +1082,88 @@ async function handleGenerate(req, res) {
   return send(res, 503, { error: 'Image generation failed. Check your CometAPI key or try again.' });
 }
 
+/* ------------------------------ Text-to-Speech (ElevenLabs) ------------------------------ */
+async function handleTTS(req, res) {
+  cors(res);
+  const body = await readJson(req);
+  if (!body || !body.text) return send(res, 400, { error: 'Missing text' });
+
+  const elKey = keyFor('elevenlabs');
+  if (!elKey) return send(res, 503, { error: 'ElevenLabs key not configured. Add ELEVENLABS_KEY to Render.' });
+
+  const voiceId = body.voice || 'pNInz6obpgDQGcFmaJgB'; // "Adam" — ElevenLabs default male voice
+  const text = body.text.slice(0, 5000); // cap at 5000 chars
+
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voiceId, {
+      method: 'POST',
+      headers: { 'xi-api-key': elKey, 'content-type': 'application/json', 'accept': 'audio/mpeg' },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => '');
+      console.error('ElevenLabs TTS error:', err.slice(0, 300));
+      return send(res, r.status, { error: 'TTS failed: ' + err.slice(0, 200) });
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    return send(res, 200, { audio: 'data:audio/mpeg;base64,' + buf.toString('base64'), provider: 'elevenlabs' });
+  } catch (e) {
+    console.error('ElevenLabs TTS failed:', e.message);
+    return send(res, 500, { error: 'TTS request failed: ' + e.message });
+  }
+}
+
+/* ------------------------------ Sandboxed Code Execution ------------------------------ */
+const vm = require('vm');
+async function handleRunCode(req, res) {
+  cors(res);
+  const body = await readJson(req);
+  if (!body || !body.code) return send(res, 400, { error: 'Missing code' });
+
+  const lang = (body.language || 'javascript').toLowerCase();
+  const code = body.code.slice(0, 10000); // cap code length
+
+  if (lang === 'javascript' || lang === 'js') {
+    // Run JS in Node's vm sandbox — no filesystem, no network, hard 5-second timeout
+    try {
+      const logs = [];
+      const sandbox = {
+        console: { log: (...a) => logs.push(a.map(String).join(' ')), error: (...a) => logs.push('[err] ' + a.map(String).join(' ')) },
+        Math, Date, JSON, parseInt, parseFloat, isNaN, isFinite,
+        Array, Object, String, Number, Boolean, Map, Set, RegExp,
+        setTimeout: undefined, setInterval: undefined, fetch: undefined, require: undefined, process: undefined
+      };
+      vm.createContext(sandbox);
+      const result = vm.runInContext(code, sandbox, { timeout: 5000 });
+      const output = logs.length ? logs.join('\n') : (result !== undefined ? String(result) : '(no output)');
+      return send(res, 200, { output: output.slice(0, 5000), language: 'javascript' });
+    } catch (e) {
+      return send(res, 200, { output: 'Error: ' + e.message, language: 'javascript', error: true });
+    }
+  }
+
+  if (lang === 'python' || lang === 'py') {
+    // Run Python via child_process with a hard 10-second timeout
+    const { execSync } = require('child_process');
+    try {
+      const tmpFile = '/tmp/mist_run_' + Date.now() + '.py';
+      require('fs').writeFileSync(tmpFile, code);
+      const output = execSync('python3 ' + tmpFile, { timeout: 10000, maxBuffer: 1024 * 100, encoding: 'utf8' });
+      try { require('fs').unlinkSync(tmpFile); } catch {}
+      return send(res, 200, { output: (output || '(no output)').slice(0, 5000), language: 'python' });
+    } catch (e) {
+      return send(res, 200, { output: 'Error: ' + (e.stderr || e.message || '').slice(0, 2000), language: 'python', error: true });
+    }
+  }
+
+  return send(res, 400, { error: 'Unsupported language. Use "javascript" or "python".' });
+}
+
 
 /* ------------------------------ workspaces (multi-user accounts) ------------------------------ */
 async function handleWorkspace(req, res) {
@@ -1473,8 +1555,93 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/api/chat' && req.method === 'POST') return handleChat(req, res);
   if (urlPath === '/api/sync' && req.method === 'POST') return handleSync(req, res);
   if (urlPath === '/api/generate' && req.method === 'POST') return handleGenerate(req, res);
+  if (urlPath === '/api/tts' && req.method === 'POST') return handleTTS(req, res);
+  if (urlPath === '/api/run-code' && req.method === 'POST') return handleRunCode(req, res);
   if (urlPath === '/api/agent/start' && req.method === 'POST') return handleAgentStart(req, res);
   if (urlPath === '/api/agent/stop' && req.method === 'POST') return handleAgentStop(req, res);
+  // ---- Forgot password: send a 6-digit code via Resend, verify it, reset password ----
+  if (urlPath === '/api/forgot-password' && req.method === 'POST') {
+    cors(res);
+    const body = await readJson(req);
+    const email = (body && body.email || '').trim().toLowerCase();
+    if (!email) return send(res, 400, { error: 'Email is required' });
+
+    // Find user by email
+    const user = Object.values(DB.users).find(u => (u.email || '').toLowerCase() === email);
+    if (!user) {
+      // Don't reveal whether the email exists — always say "sent" for security
+      return send(res, 200, { ok: true, message: 'If an account exists with that email, a code has been sent.' });
+    }
+
+    const resendKey = keyFor('resend');
+    if (!resendKey) return send(res, 503, { error: 'Email service not configured. Add RESEND_KEY to Render.' });
+
+    // Generate 6-digit code, store with 10-minute expiry
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    if (!DB.resetCodes) DB.resetCodes = {};
+    DB.resetCodes[email] = { code, userId: user.id, expiresAt: nowMs() + 10 * 60 * 1000 };
+    save();
+
+    // Send via Resend
+    try {
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'authorization': 'Bearer ' + resendKey, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          from: 'Mist <onboarding@resend.dev>',
+          to: [email],
+          subject: 'Your Mist verification code: ' + code,
+          html: '<div style="font-family:sans-serif;max-width:400px;margin:auto;padding:20px">'
+            + '<h2 style="margin:0 0 10px">Mist</h2>'
+            + '<p>Your verification code is:</p>'
+            + '<div style="font-size:32px;font-weight:bold;letter-spacing:8px;padding:20px;background:#f5f5f5;border-radius:8px;text-align:center">' + code + '</div>'
+            + '<p style="color:#666;font-size:13px;margin-top:16px">This code expires in 10 minutes. If you didn\'t request this, ignore this email.</p>'
+            + '</div>'
+        }),
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!r.ok) {
+        const err = await r.text().catch(() => '');
+        console.error('Resend email failed:', err.slice(0, 300));
+        return send(res, 500, { error: 'Failed to send email. Check RESEND_KEY configuration.' });
+      }
+    } catch (e) {
+      console.error('Resend fetch failed:', e.message);
+      return send(res, 500, { error: 'Email service unreachable.' });
+    }
+
+    return send(res, 200, { ok: true, message: 'If an account exists with that email, a code has been sent.' });
+  }
+
+  if (urlPath === '/api/verify-reset-code' && req.method === 'POST') {
+    cors(res);
+    const body = await readJson(req);
+    const email = (body && body.email || '').trim().toLowerCase();
+    const code = (body && body.code || '').trim();
+    const newPassword = (body && body.newPassword || '');
+
+    if (!email || !code || !newPassword) return send(res, 400, { error: 'Missing email, code, or new password' });
+    if (newPassword.length < 4) return send(res, 400, { error: 'Password must be at least 4 characters' });
+
+    const stored = DB.resetCodes && DB.resetCodes[email];
+    if (!stored || stored.code !== code) return send(res, 400, { error: 'Invalid code' });
+    if (nowMs() > stored.expiresAt) {
+      delete DB.resetCodes[email];
+      save();
+      return send(res, 400, { error: 'Code has expired. Request a new one.' });
+    }
+
+    // Update the user's password
+    const user = DB.users[stored.userId];
+    if (user) {
+      user.passwordHash = crypto.scryptSync(newPassword, stored.userId, 32).toString('hex');
+      delete DB.resetCodes[email];
+      save();
+      return send(res, 200, { ok: true, message: 'Password reset successfully.' });
+    }
+    return send(res, 400, { error: 'User not found' });
+  }
+
   if (urlPath === '/api/feedback' && req.method === 'POST') {
     cors(res);
     const body = await readJson(req);

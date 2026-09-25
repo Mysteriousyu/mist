@@ -220,6 +220,12 @@ a:hover{text-decoration:underline}
 .send:not(:disabled):hover{transform:scale(1.06)}
 .send.stop{background:var(--danger);color:#fff}
 .hint{max-width:900px;margin:8px auto 0;text-align:center;font-size:11.5px;color:var(--muted)}
+/* Voice chat orb animation */
+#voiceOrb.listening{border-color:var(--brand);box-shadow:0 0 0 8px rgba(255,255,255,.06);animation:voicePulse 1.5s ease infinite}
+#voiceOrb.thinking{border-color:var(--muted);animation:voiceSpin 2s linear infinite}
+#voiceOrb.speaking{border-color:var(--ok);box-shadow:0 0 0 12px rgba(74,222,128,.08);animation:voicePulse 0.8s ease infinite}
+@keyframes voicePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@keyframes voiceSpin{0%{box-shadow:0 0 0 4px rgba(255,255,255,.05)}50%{box-shadow:0 0 0 8px rgba(255,255,255,.1)}100%{box-shadow:0 0 0 4px rgba(255,255,255,.05)}}
 .attachments{display:flex;flex-wrap:wrap;gap:6px;padding:0 2px}
 .attach-chip{
   display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 8px;background:var(--surface-2);
@@ -488,9 +494,37 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
 
       <button class="auth-btn" id="authSubmit">Sign in</button>
       <div class="auth-err" id="authErr"></div>
+      <div style="text-align:center;margin-top:8px"><button type="button" id="forgotLink" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline">Forgot password?</button></div>
 
       <div class="auth-toggle" id="authToggle">New to Mist? <button type="button">Create an account</button></div>
       <p class="auth-legal">By continuing you agree to Mist's Terms and Privacy Policy.</p>
+    </div>
+  </div>
+  <!-- Forgot password overlay -->
+  <div id="forgotOverlay" style="display:none;position:fixed;inset:0;z-index:260;background:var(--bg);place-items:center">
+    <div class="auth-card" style="max-width:380px">
+      <div class="auth-brand"><span class="dot"></span> Mist</div>
+      <h2 id="forgotTitle">Reset your password</h2>
+      <!-- Step 1: enter email -->
+      <div id="forgotStep1">
+        <p class="sub">Enter the email linked to your account and we'll send a 6-digit code.</p>
+        <div class="auth-field"><label>Email</label><input id="forgotEmail" type="email" placeholder="you@email.com"></div>
+        <button class="auth-btn" id="forgotSendBtn">Send code</button>
+      </div>
+      <!-- Step 2: enter code + new password -->
+      <div id="forgotStep2" style="display:none">
+        <p class="sub">Enter the 6-digit code we sent to <b id="forgotEmailShow"></b></p>
+        <div class="auth-field"><label>Verification code</label><input id="forgotCode" type="text" maxlength="6" placeholder="123456" style="text-align:center;letter-spacing:8px;font-size:20px;font-weight:bold"></div>
+        <div class="auth-field"><label>New password</label><input id="forgotNewPass" type="password" placeholder="New password"></div>
+        <button class="auth-btn" id="forgotResetBtn">Reset password</button>
+      </div>
+      <!-- Step 3: success -->
+      <div id="forgotStep3" style="display:none">
+        <p class="sub" style="color:var(--ok)">Password reset successfully! You can sign in now.</p>
+        <button class="auth-btn" id="forgotBackBtn">Back to sign in</button>
+      </div>
+      <div class="auth-err" id="forgotErr"></div>
+      <div style="text-align:center;margin-top:12px"><button type="button" id="forgotCancel" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer">← Back to sign in</button></div>
     </div>
   </div>
 </div>
@@ -600,14 +634,39 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="10" r="1"/><circle cx="16" cy="10" r="1"/></svg>
               Agentic
             </button>
+            <button class="tool-pill" id="pillVoice" data-tool="voice" title="Read the AI's response aloud using ElevenLabs">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><path d="M12 19v4M8 23h8"/></svg>
+              Voice
+            </button>
+            <button class="tool-pill" id="pillCode" data-tool="code" title="Run code from the AI's response in a sandbox">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              Run code
+            </button>
             <button class="send" id="btnSend" disabled aria-label="Send message">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+            </button>
+            <button class="tool-pill" id="btnMic" title="Voice chat — talk to the AI" style="padding:6px 10px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg>
             </button>
           </div>
         </div>
         <div class="hint" id="composerHint">Pluto handles everyday questions. Switch to Sonar for heavy coding and UI work.</div>
       </div>
     </section>
+
+    <!-- Voice chat overlay -->
+    <div id="voiceOverlay" style="display:none;position:fixed;inset:0;z-index:300;background:var(--bg);flex-direction:column;align-items:center;justify-content:center">
+      <div id="voiceOrb" style="width:120px;height:120px;border-radius:50%;background:var(--surface-2);border:2px solid var(--border);display:grid;place-items:center;transition:all .3s ease;margin-bottom:24px">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="1.5"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><path d="M12 19v4M8 23h8"/></svg>
+      </div>
+      <div id="voiceStatus" style="font-size:14px;color:var(--text-2);margin-bottom:8px">Tap to start talking</div>
+      <div id="voiceTranscript" style="font-size:13px;color:var(--muted);max-width:400px;text-align:center;min-height:20px;margin-bottom:24px"></div>
+      <div id="voiceAIResponse" style="font-size:14px;color:var(--text);max-width:500px;text-align:center;min-height:20px;margin-bottom:24px;line-height:1.5"></div>
+      <div style="display:flex;gap:12px">
+        <button id="voiceToggle" style="padding:12px 28px;border-radius:24px;background:var(--brand);color:var(--bg);font-weight:600;font-size:14px;border:none;cursor:pointer">Start</button>
+        <button id="voiceClose" style="padding:12px 28px;border-radius:24px;background:var(--surface-2);color:var(--text);font-size:14px;border:1px solid var(--border);cursor:pointer">Close</button>
+      </div>
+    </div>
 
     <!-- PROJECTS -->
     <section class="view" id="view-projects">
@@ -1097,8 +1156,16 @@ function inline(t) {
 }
 
 function md(src) {
+  // Some models (esp. open reasoning models via fallback providers) leak raw
+  // <think>...</think> reasoning blocks into the visible output. Strip them here
+  // so it never reaches the rendered message regardless of which provider answered.
+  // Strip complete think blocks, and also hide an unclosed one while it's still streaming in
+  const cleaned = String(src || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim();
   const out = [];
-  const lines = String(src || '').replace(/\r\n/g, '\n').split('\n');
+  const lines = cleaned.replace(/\r\n/g, '\n').split('\n');
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
@@ -1460,6 +1527,9 @@ async function run(chat) {
     msg.pending = false;
     if (!msg.content.trim()) { msg.content = '_The model returned an empty response._'; }
     harvestArtifacts(msg, chat);
+    // Run post-response tools (voice readout, code execution) if a tool pill was active
+    const msgEl = document.getElementById('body-' + msg.id);
+    await postResponseTools(msgEl, msg.content);
   } catch (e) {
     msg.pending = false;
     if (e.name === 'AbortError') {
@@ -2008,10 +2078,267 @@ $('#pillWeb').onclick = () => {
 $('#pillAgentic').onclick = () => {
   S.activeTool = S.activeTool === 'agentic' ? null : 'agentic';
   $('#pillAgentic').classList.toggle('on', S.activeTool === 'agentic');
-  $('#pillImage').classList.remove('on');
-  $('#pillWeb').classList.remove('on');
+  $('#pillImage').classList.remove('on'); $('#pillWeb').classList.remove('on'); $('#pillVoice').classList.remove('on'); $('#pillCode').classList.remove('on');
   if (S.activeTool === 'agentic') { S.model = 'sonar'; render(); toast('Agentic mode — Sonar will control a real browser for your next message'); }
 };
+$('#pillVoice').onclick = () => {
+  S.activeTool = S.activeTool === 'voice' ? null : 'voice';
+  $('#pillVoice').classList.toggle('on', S.activeTool === 'voice');
+  $('#pillImage').classList.remove('on'); $('#pillWeb').classList.remove('on'); $('#pillAgentic').classList.remove('on'); $('#pillCode').classList.remove('on');
+  if (S.activeTool === 'voice') toast('Voice mode — the AI\'s next response will be read aloud');
+};
+$('#pillCode').onclick = () => {
+  S.activeTool = S.activeTool === 'code' ? null : 'code';
+  $('#pillCode').classList.toggle('on', S.activeTool === 'code');
+  $('#pillImage').classList.remove('on'); $('#pillWeb').classList.remove('on'); $('#pillAgentic').classList.remove('on'); $('#pillVoice').classList.remove('on');
+  if (S.activeTool === 'code') toast('Run code — any code blocks in the AI\'s response will be executed in a sandbox');
+};
+
+/* ---- Voice (TTS via ElevenLabs) ---- */
+async function speakText(text) {
+  try {
+    const r = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: text.slice(0, 3000) })
+    });
+    const j = await r.json();
+    if (j.audio) {
+      const audio = new Audio(j.audio);
+      audio.play();
+      return true;
+    } else {
+      toast(j.error || 'TTS failed');
+      return false;
+    }
+  } catch (e) { toast('Voice error: ' + e.message); return false; }
+}
+
+/* ---- Code execution (sandboxed on server) ---- */
+async function runCodeBlock(code, language) {
+  try {
+    const r = await fetch('/api/run-code', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code, language })
+    });
+    const j = await r.json();
+    return j.output || '(no output)';
+  } catch (e) { return 'Error: ' + e.message; }
+}
+
+/* ---- Post-response tool actions ---- */
+// Called after the AI finishes streaming — handles voice and code tools
+async function postResponseTools(msgEl, fullText) {
+  // Voice: read the response aloud
+  if (S.activeTool === 'voice') {
+    S.activeTool = null; $('#pillVoice').classList.remove('on');
+    const plainText = fullText.replace(/```[\s\S]*?```/g, '').replace(/[#*_`~>\[\]()]/g, '').trim();
+    if (plainText) await speakText(plainText);
+  }
+  // Run code: find code blocks, execute them, append results
+  if (S.activeTool === 'code') {
+    S.activeTool = null; $('#pillCode').classList.remove('on');
+    const codeBlocks = [...fullText.matchAll(/```(\w*)\n([\s\S]*?)```/g)];
+    if (codeBlocks.length) {
+      for (const match of codeBlocks) {
+        const lang = match[1] || 'javascript';
+        const code = match[2].trim();
+        if (['javascript','js','python','py'].includes(lang.toLowerCase())) {
+          const output = await runCodeBlock(code, lang);
+          // Append the result as a new message
+          const chat = S.chats.find(c => c.id === S.activeChatId);
+          if (chat) {
+            chat.messages.push({ id: uid(), role: 'assistant', content: '**Code output** (`' + lang + '`):\n```\n' + output + '\n```', ts: now() });
+            save.chats(); render(); scrollDown();
+          }
+        }
+      }
+    } else {
+      toast('No runnable code blocks found in the response');
+    }
+  }
+}
+
+/* ---- Voice Chat Mode (ChatGPT-style) ---- */
+let voiceRecognition = null;
+let voiceActive = false;
+let voiceListening = false;
+
+function voiceSupported() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function initVoiceRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const rec = new SR();
+  rec.continuous = false;
+  rec.interimResults = true;
+  rec.lang = 'en-US';
+  return rec;
+}
+
+$('#btnMic').onclick = () => {
+  if (!voiceSupported()) { toast('Voice not supported in this browser — try Chrome or Safari'); return; }
+  document.getElementById('voiceOverlay').style.display = 'flex';
+  document.getElementById('voiceStatus').textContent = 'Tap Start to begin talking';
+  document.getElementById('voiceTranscript').textContent = '';
+  document.getElementById('voiceAIResponse').textContent = '';
+  document.getElementById('voiceOrb').className = '';
+  document.getElementById('voiceToggle').textContent = 'Start';
+  voiceActive = false;
+  voiceListening = false;
+};
+
+$('#voiceClose').onclick = () => {
+  voiceStopListening();
+  document.getElementById('voiceOverlay').style.display = 'none';
+  voiceActive = false;
+};
+
+$('#voiceToggle').onclick = () => {
+  if (voiceListening) {
+    voiceStopListening();
+  } else {
+    voiceStartListening();
+  }
+};
+
+function voiceStartListening() {
+  voiceRecognition = initVoiceRecognition();
+  if (!voiceRecognition) { toast('Speech recognition not available'); return; }
+  voiceListening = true;
+  voiceActive = true;
+  document.getElementById('voiceToggle').textContent = 'Stop';
+  document.getElementById('voiceStatus').textContent = 'Listening…';
+  document.getElementById('voiceOrb').className = 'listening';
+  document.getElementById('voiceTranscript').textContent = '';
+  document.getElementById('voiceAIResponse').textContent = '';
+
+  let finalTranscript = '';
+
+  voiceRecognition.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) finalTranscript += e.results[i][0].transcript + ' ';
+      else interim += e.results[i][0].transcript;
+    }
+    document.getElementById('voiceTranscript').textContent = finalTranscript + interim;
+  };
+
+  voiceRecognition.onend = () => {
+    voiceListening = false;
+    document.getElementById('voiceToggle').textContent = 'Start';
+    const text = finalTranscript.trim();
+    if (text && voiceActive) {
+      voiceProcessResponse(text);
+    } else {
+      document.getElementById('voiceStatus').textContent = 'Tap Start to try again';
+      document.getElementById('voiceOrb').className = '';
+    }
+  };
+
+  voiceRecognition.onerror = (e) => {
+    voiceListening = false;
+    document.getElementById('voiceToggle').textContent = 'Start';
+    if (e.error === 'no-speech') {
+      document.getElementById('voiceStatus').textContent = 'No speech detected — tap Start to try again';
+    } else {
+      document.getElementById('voiceStatus').textContent = 'Error: ' + e.error;
+    }
+    document.getElementById('voiceOrb').className = '';
+  };
+
+  voiceRecognition.start();
+}
+
+function voiceStopListening() {
+  if (voiceRecognition) { try { voiceRecognition.stop(); } catch {} }
+  voiceListening = false;
+}
+
+async function voiceProcessResponse(userText) {
+  document.getElementById('voiceStatus').textContent = 'Thinking…';
+  document.getElementById('voiceOrb').className = 'thinking';
+  document.getElementById('voiceAIResponse').textContent = '';
+
+  // Also add to the actual chat so it's saved in history
+  const chat = S.chats.find(c => c.id === S.activeChatId) || newChat();
+  const assistant = S.model;
+  chat.messages.push({ id: uid(), role: 'user', content: userText, ts: now() });
+
+  try {
+    // Get AI response via a simple non-streaming call for voice mode
+    const r = await fetch(S.config.endpoint || '/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-mist-user': S.userId },
+      body: JSON.stringify({
+        assistant, messages: chat.messages.slice(-6),
+        system: systemFor(assistant, chat), stream: false,
+        userId: S.userId
+      })
+    });
+
+    let aiText = '';
+    if (r.ok) {
+      // Try to read as streaming SSE even though we asked for non-stream (server always streams)
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const events = buf.split('\n\n'); buf = events.pop();
+        for (const ev of events) {
+          for (const line of ev.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const raw = line.slice(5).trim();
+            if (!raw || raw === '[DONE]') continue;
+            try {
+              const j = JSON.parse(raw);
+              const piece = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+              if (piece) aiText += piece;
+            } catch {}
+          }
+        }
+      }
+    }
+
+    // Strip think tags
+    aiText = aiText.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').trim();
+
+    if (!aiText) aiText = 'I didn\'t get a response. Try again.';
+
+    // Save to chat history
+    chat.messages.push({ id: uid(), role: 'assistant', content: aiText, ts: now() });
+    chat.updatedAt = now();
+    save.chats(); render();
+
+    // Show the response text
+    document.getElementById('voiceAIResponse').textContent = aiText.slice(0, 500);
+
+    // Speak it
+    document.getElementById('voiceStatus').textContent = 'Speaking…';
+    document.getElementById('voiceOrb').className = 'speaking';
+
+    const plainText = aiText.replace(/```[\s\S]*?```/g, '').replace(/[#*_`~>\[\]()]/g, '').trim();
+    const spoke = await speakText(plainText.slice(0, 3000));
+
+    if (spoke) {
+      // After speaking, auto-listen again for the next turn
+      document.getElementById('voiceStatus').textContent = 'Your turn — listening…';
+      setTimeout(() => { if (voiceActive) voiceStartListening(); }, 1500);
+    } else {
+      document.getElementById('voiceStatus').textContent = 'Tap Start to continue';
+      document.getElementById('voiceOrb').className = '';
+    }
+  } catch (e) {
+    document.getElementById('voiceStatus').textContent = 'Error: ' + e.message;
+    document.getElementById('voiceOrb').className = '';
+  }
+}
 
 /* message actions (delegated) */
 $('#messages').addEventListener('click', e => {
@@ -2387,6 +2714,63 @@ function setAuthMode(mode) {
   $('#authErr').textContent = '';
 }
 $('#authToggle').addEventListener('click', e => { if (e.target.tagName === 'BUTTON') setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); });
+
+/* ---- Forgot password flow ---- */
+$('#forgotLink').onclick = () => {
+  document.getElementById('auth').style.display = 'none';
+  const ov = document.getElementById('forgotOverlay');
+  ov.style.display = 'grid';
+  document.getElementById('forgotStep1').style.display = 'block';
+  document.getElementById('forgotStep2').style.display = 'none';
+  document.getElementById('forgotStep3').style.display = 'none';
+  document.getElementById('forgotErr').textContent = '';
+};
+$('#forgotCancel').onclick = () => {
+  document.getElementById('forgotOverlay').style.display = 'none';
+  document.getElementById('auth').style.display = 'grid';
+};
+$('#forgotBackBtn').onclick = () => {
+  document.getElementById('forgotOverlay').style.display = 'none';
+  document.getElementById('auth').style.display = 'grid';
+};
+$('#forgotSendBtn').onclick = async () => {
+  const email = document.getElementById('forgotEmail').value.trim();
+  if (!email) { document.getElementById('forgotErr').textContent = 'Enter your email'; return; }
+  document.getElementById('forgotErr').textContent = '';
+  document.getElementById('forgotSendBtn').textContent = 'Sending…';
+  try {
+    const r = await fetch('/api/forgot-password', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const j = await r.json();
+    if (!r.ok) { document.getElementById('forgotErr').textContent = j.error || 'Failed'; return; }
+    document.getElementById('forgotEmailShow').textContent = email;
+    document.getElementById('forgotStep1').style.display = 'none';
+    document.getElementById('forgotStep2').style.display = 'block';
+  } catch (e) { document.getElementById('forgotErr').textContent = e.message; }
+  finally { document.getElementById('forgotSendBtn').textContent = 'Send code'; }
+};
+$('#forgotResetBtn').onclick = async () => {
+  const email = document.getElementById('forgotEmail').value.trim();
+  const code = document.getElementById('forgotCode').value.trim();
+  const newPassword = document.getElementById('forgotNewPass').value;
+  if (!code || code.length !== 6) { document.getElementById('forgotErr').textContent = 'Enter the 6-digit code'; return; }
+  if (!newPassword || newPassword.length < 4) { document.getElementById('forgotErr').textContent = 'Password must be at least 4 characters'; return; }
+  document.getElementById('forgotErr').textContent = '';
+  document.getElementById('forgotResetBtn').textContent = 'Resetting…';
+  try {
+    const r = await fetch('/api/verify-reset-code', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, code, newPassword })
+    });
+    const j = await r.json();
+    if (!r.ok) { document.getElementById('forgotErr').textContent = j.error || 'Failed'; return; }
+    document.getElementById('forgotStep2').style.display = 'none';
+    document.getElementById('forgotStep3').style.display = 'block';
+  } catch (e) { document.getElementById('forgotErr').textContent = e.message; }
+  finally { document.getElementById('forgotResetBtn').textContent = 'Reset password'; }
+};
 function submitAuth() {
   const email = $('#authEmail').value.trim();
   const pass = $('#authPass').value;
