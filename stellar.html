@@ -867,6 +867,7 @@ async function agentStart() {
     await agentConnectHyperbeam(init.embedUrl);
   } catch (e) {
     agentLogLine('err', 'Could not connect to the live browser: ' + e.message);
+    agentReleaseHyperbeam(); // the VM was created even though we couldn't connect to it — free it
     agentDone();
     return;
   }
@@ -892,12 +893,13 @@ async function agentStepLoop(note) {
       note = null; // only send once, on the first step of this loop call
     } catch (e) {
       agentLogLine('err', 'Connection error: ' + e.message);
+      agentReleaseHyperbeam();
       break;
     }
 
-    if (j.type === 'error') { agentLogLine('err', j.message); break; }
+    if (j.type === 'error') { agentLogLine('err', j.message); agentReleaseHyperbeam(); break; }
     if (j.thought) agentLogLine('', j.thought);
-    if (j.type === 'done') { agentLogLine('', '✓ ' + j.message); break; }
+    if (j.type === 'done') { agentLogLine('', '✓ ' + j.message); agentReleaseHyperbeam(); break; }
 
     if (j.type === 'needs_help') {
       agentLogLine('', '⏸ Paused — needs your help');
@@ -922,6 +924,23 @@ function agentDone() {
   document.getElementById('agentStopBtn').style.display = 'none';
 }
 
+// Tears down the live Hyperbeam VM the moment a run ends (done, errored, or stopped) —
+// every second it's left alive after that burns free-tier minutes for nothing, and repeated
+// test runs that never got here are exactly what causes Hyperbeam's "too many VM requests"
+// rate limit. Leaves the log and the last frame on screen; only agentStop() clears those.
+function agentReleaseHyperbeam() {
+  if (agentSessionId) {
+    fetch('/api/agent/stop', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: agentSessionId })
+    }).catch(() => {});
+  }
+  if (agentHbClient) { try { agentHbClient.destroy(); } catch {} agentHbClient = null; }
+  agentSessionId = null;
+  agentLastFrame = null;
+}
+
 function agentSendHelp() {
   const input = document.getElementById('agentHelpInput');
   const helpText = input.value.trim();
@@ -937,16 +956,7 @@ function agentSendHelp() {
 
 async function agentStop() {
   agentRunning = false;
-  if (agentSessionId) {
-    fetch('/api/agent/stop', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sessionId: agentSessionId })
-    }).catch(() => {});
-  }
-  if (agentHbClient) { try { agentHbClient.destroy(); } catch {} agentHbClient = null; }
-  agentSessionId = null;
-  agentLastFrame = null;
+  agentReleaseHyperbeam();
   document.getElementById('agentView').classList.remove('active');
   document.getElementById('agentEmbed').innerHTML = '<div class="agent-embed-loading">Connecting to live browser…</div>';
   agentDone();

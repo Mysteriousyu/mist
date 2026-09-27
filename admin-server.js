@@ -1321,6 +1321,12 @@ async function handleConnectResult(req, res) {
 const AGENT_SESSIONS = {}; // sessionId -> { messages, status, task, userId, step, createdAt, hyperbeamId }
 const AGENT_MAX_STEPS = 40;
 const AGENT_VIEWPORT = { width: 1280, height: 800 };
+// Every Hyperbeam VM costs real free-tier minutes, and a browser tab closing, crashing, or
+// erroring mid-run leaves nothing to call /api/agent/stop. So the backend is the one that
+// guarantees cleanup: any session that goes quiet for AGENT_IDLE_MS gets its VM destroyed,
+// no matter what the frontend does or doesn't do. needs_help gets a longer grace period.
+const AGENT_IDLE_MS = 3 * 60 * 1000;
+const AGENT_HELP_IDLE_MS = 10 * 60 * 1000;
 
 function agentUid() { return 'agent_' + crypto.randomBytes(8).toString('hex'); }
 
@@ -1396,9 +1402,19 @@ async function destroyHyperbeamSession(hyperbeamId) {
 function stopAgentSession(id) {
   const s = AGENT_SESSIONS[id];
   if (!s) return;
-  clearTimeout(s._pauseTimer);
+  clearTimeout(s._idleTimer);
   destroyHyperbeamSession(s.hyperbeamId);
   delete AGENT_SESSIONS[id];
+}
+
+// Called after every init/step so a session that goes quiet — tab closed, crashed, network
+// dropped, anything — still gets its Hyperbeam VM torn down instead of burning minutes
+// until Hyperbeam's own (much longer) offline_timeout finally kicks in.
+function armAgentIdleTimer(id, ms) {
+  const s = AGENT_SESSIONS[id];
+  if (!s) return;
+  clearTimeout(s._idleTimer);
+  s._idleTimer = setTimeout(() => stopAgentSession(id), ms);
 }
 
 // Step 1 — start a Hyperbeam session and the agent's message history; hand the live embed to the frontend.
@@ -1439,6 +1455,7 @@ async function handleAgentInit(req, res) {
     }]
   };
 
+  armAgentIdleTimer(id, AGENT_IDLE_MS);
   return send(res, 200, { sessionId: id, embedUrl: hb.embed_url, adminToken: hb.admin_token });
 }
 
@@ -1450,12 +1467,14 @@ async function handleAgentStep(req, res) {
   if (!session) return send(res, 404, { error: 'Session not found or expired.' });
   if (!body.screenshot) return send(res, 400, { error: 'Missing screenshot' });
 
-  clearTimeout(session._pauseTimer);
+  clearTimeout(session._idleTimer);
   session.status = 'running';
   session.step++;
 
   if (session.step > AGENT_MAX_STEPS) {
-    return send(res, 200, { type: 'done', message: 'Reached the step limit (' + AGENT_MAX_STEPS + ') for one agent run. Tell me to continue if the task needs more steps.' });
+    const msg = { type: 'done', message: 'Reached the step limit (' + AGENT_MAX_STEPS + ') for one agent run. Tell me to continue if the task needs more steps.' };
+    stopAgentSession(body.sessionId); // task-cap reached — no reason to keep the VM running
+    return send(res, 200, msg);
   }
 
   const msgs = session.messages;
@@ -1492,10 +1511,12 @@ async function handleAgentStep(req, res) {
       signal: AbortSignal.timeout(45000)
     });
   } catch (e) {
+    stopAgentSession(body.sessionId); // brain call failed outright — don't leave the VM running
     return send(res, 200, { type: 'error', message: 'Agent brain unreachable: ' + e.message });
   }
   if (!apiRes.ok) {
     const t = await apiRes.text().catch(() => '');
+    stopAgentSession(body.sessionId);
     return send(res, 200, { type: 'error', message: 'Agent brain error: ' + t.slice(0, 300) });
   }
 
@@ -1511,13 +1532,16 @@ async function handleAgentStep(req, res) {
   if (!toolUse) {
     session.status = blockerWords.test(textParts) ? 'needs_help' : 'done';
     if (session.status === 'needs_help') {
-      session._pauseTimer = setTimeout(() => stopAgentSession(body.sessionId), 10 * 60 * 1000);
+      armAgentIdleTimer(body.sessionId, AGENT_HELP_IDLE_MS); // give the user real time to respond
+    } else {
+      stopAgentSession(body.sessionId); // task's done — kill the VM now, don't wait for idle timeout
     }
     return send(res, 200, { type: session.status === 'needs_help' ? 'needs_help' : 'done', message: textParts || 'Task complete.' });
   }
 
   session._lastToolId = toolUse.id;
   msgs.push({ role: 'assistant', content });
+  armAgentIdleTimer(body.sessionId, AGENT_IDLE_MS); // still mid-run — reset the "gone quiet" clock
 
   const action = normalizeAgentAction(toolUse);
   return send(res, 200, { type: 'action', thought: textParts || null, action });
