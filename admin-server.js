@@ -1324,9 +1324,13 @@ const AGENT_VIEWPORT = { width: 1280, height: 800 };
 
 function agentUid() { return 'agent_' + crypto.randomBytes(8).toString('hex'); }
 
-function computerTool() {
+// CometAPI routes claude-fable-5-1 through Amazon Bedrock, which is still on the older
+// computer_20251124 tool + beta header. Hitting api.anthropic.com directly for the same
+// model wants the newer computer_toolset_20260801 with no beta header at all. Same model
+// name, two different wire formats depending on which backend actually serves it.
+function computerTool(viaBedrock) {
   return {
-    type: 'computer_20241022',
+    type: viaBedrock ? 'computer_20251124' : 'computer_toolset_20260801',
     name: 'computer',
     display_width_px: AGENT_VIEWPORT.width,
     display_height_px: AGENT_VIEWPORT.height,
@@ -1471,17 +1475,20 @@ async function handleAgentStep(req, res) {
 
   const cometKey = keyFor('cometapi');
   const anthropicKey = keyFor('anthropic');
-  const useCometFirst = !!cometKey;
+  const useCometFirst = !!cometKey; // CometAPI proxies this model through Bedrock
   const anthroKey = useCometFirst ? cometKey : anthropicKey;
   const anthroUrl = useCometFirst ? 'https://api.cometapi.com/v1/messages' : 'https://api.anthropic.com/v1/messages';
   const model = 'claude-fable-5-1';
+
+  const headers = { 'content-type': 'application/json', 'x-api-key': anthroKey, 'anthropic-version': '2023-06-01' };
+  if (useCometFirst) headers['anthropic-beta'] = 'computer-use-2025-11-24'; // not needed/accepted on direct API
 
   let apiRes;
   try {
     apiRes = await fetch(anthroUrl, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': anthroKey, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'computer-use-2024-10-22' },
-      body: JSON.stringify({ model, max_tokens: 1024, tools: [computerTool()], messages: msgs }),
+      headers,
+      body: JSON.stringify({ model, max_tokens: 1024, tools: [computerTool(useCometFirst)], messages: msgs }),
       signal: AbortSignal.timeout(45000)
     });
   } catch (e) {
