@@ -247,9 +247,14 @@ button{cursor:pointer}
   background:#050505;z-index:40;
 }
 .agent-view.active{display:flex}
-#agentScreenshot{
-  flex:1;width:100%;object-fit:contain;background:#000;
-  border-bottom:1px solid #1a1a1a;
+#agentEmbed{
+  flex:1;width:100%;background:#000;
+  border-bottom:1px solid #1a1a1a;position:relative;overflow:hidden;
+}
+#agentEmbed iframe{width:100%;height:100%;border:0;display:block}
+.agent-embed-loading{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#666;font-size:13px;
 }
 .agent-log{
   flex:none;max-height:140px;overflow-y:auto;padding:10px 16px;
@@ -399,7 +404,7 @@ button{cursor:pointer}
 
     <!-- Agentic live view — replaces the iframe while an agent task runs -->
     <div class="agent-view" id="agentView">
-      <img id="agentScreenshot" alt="Live agent browser">
+      <div id="agentEmbed"><div class="agent-embed-loading">Connecting to live browser…</div></div>
       <div class="agent-log" id="agentLog"></div>
       <div class="agent-help" id="agentHelp">
         <p id="agentHelpText"></p>
@@ -733,10 +738,17 @@ window.addEventListener('message', function(e) {
   }
 });
 
-/* ========== AGENTIC MODE — Sonar drives a real browser live ========== */
+/* ========== AGENTIC MODE — Sonar drives a real browser live, hosted by Hyperbeam ==========
+   Hyperbeam's virtual browser only accepts input from a client actually connected to it —
+   there's no backend API for clicks/screenshots — so THIS PAGE is the one that connects to
+   the live session, grabs frames, and executes each move. The backend is just the "brain":
+   we send it a screenshot, it tells us the next action via Claude's computer-use tool. */
 let agentSessionId = null;
-let agentReader = null;
-let agentPendingHelp = null;
+let agentHbClient = null;
+let agentCanvas = null, agentCtx = null;
+let agentLastFrame = null;
+let agentRunning = false;
+const AGENT_W = 1280, AGENT_H = 800;
 
 function agentLogLine(cls, text) {
   const log = document.getElementById('agentLog');
@@ -747,78 +759,162 @@ function agentLogLine(cls, text) {
   log.scrollTop = log.scrollHeight;
 }
 
-function agentShowScreenshot(b64) {
-  document.getElementById('agentScreenshot').src = 'data:image/png;base64,' + b64;
+async function agentConnectHyperbeam(embedUrl) {
+  const container = document.getElementById('agentEmbed');
+  container.innerHTML = '';
+  const mod = await import('https://esm.sh/@hyperbeam/web');
+  const Hyperbeam = mod.default || mod;
+  agentCanvas = document.createElement('canvas');
+  agentCanvas.width = AGENT_W;
+  agentCanvas.height = AGENT_H;
+  agentCtx = agentCanvas.getContext('2d');
+  agentLastFrame = null;
+  agentHbClient = await Hyperbeam(container, embedUrl, {
+    frameCb: (frame) => { agentLastFrame = frame; }
+  });
 }
 
-async function agentStart(extraContext, resumeId) {
+function agentCaptureScreenshot() {
+  if (!agentLastFrame || !agentCtx) return null;
+  try {
+    agentCtx.drawImage(agentLastFrame, 0, 0, AGENT_W, AGENT_H);
+    return agentCanvas.toDataURL('image/png').split(',')[1];
+  } catch { return null; }
+}
+
+async function agentExecuteAction(action) {
+  if (!agentHbClient || !action || action.kind === 'noop') return;
+  const nx = (px) => Math.max(0, Math.min(1, px / AGENT_W));
+  const ny = (py) => Math.max(0, Math.min(1, py / AGENT_H));
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  switch (action.kind) {
+    case 'move':
+      agentHbClient.sendEvent({ type: 'mousemove', x: nx(action.x), y: ny(action.y) });
+      break;
+    case 'click': {
+      const btn = action.button === 'right' ? 2 : 0;
+      agentHbClient.sendEvent({ type: 'mousemove', x: nx(action.x), y: ny(action.y) });
+      agentHbClient.sendEvent({ type: 'mousedown', x: nx(action.x), y: ny(action.y), button: btn });
+      await wait(60);
+      agentHbClient.sendEvent({ type: 'mouseup', x: nx(action.x), y: ny(action.y), button: btn });
+      break;
+    }
+    case 'dblclick':
+      for (let i = 0; i < 2; i++) {
+        agentHbClient.sendEvent({ type: 'mousedown', x: nx(action.x), y: ny(action.y), button: 0 });
+        await wait(40);
+        agentHbClient.sendEvent({ type: 'mouseup', x: nx(action.x), y: ny(action.y), button: 0 });
+        await wait(40);
+      }
+      break;
+    case 'type':
+      for (const ch of (action.text || '')) {
+        agentHbClient.sendEvent({ type: 'keydown', key: ch });
+        agentHbClient.sendEvent({ type: 'keyup', key: ch });
+        await wait(12);
+      }
+      break;
+    case 'key':
+      agentHbClient.sendEvent({ type: 'keydown', key: action.key });
+      agentHbClient.sendEvent({ type: 'keyup', key: action.key });
+      break;
+    case 'scroll':
+      agentHbClient.sendEvent({ type: 'mousemove', x: nx(action.x), y: ny(action.y) });
+      agentHbClient.sendEvent({ type: 'wheel', deltaX: action.dx * action.amount, deltaY: action.dy * action.amount });
+      break;
+    case 'wait':
+      await wait(action.ms || 500);
+      break;
+  }
+}
+
+async function agentStart() {
   const input = document.getElementById('agentTaskInput');
-  const task = (extraContext || input.value).trim();
+  const task = input.value.trim();
   if (!task) return;
-  if (!extraContext) input.value = '';
+  input.value = '';
 
   document.getElementById('agentView').classList.add('active');
-  if (!resumeId) document.getElementById('agentLog').innerHTML = '';
+  document.getElementById('agentLog').innerHTML = '';
   document.getElementById('agentHelp').classList.remove('show');
   document.getElementById('agentGoBtn').style.display = 'none';
   document.getElementById('agentStopBtn').style.display = 'inline-block';
-  agentLogLine('', resumeId ? 'Resuming…' : 'Starting: ' + task);
+  agentLogLine('', 'Starting: ' + task);
+  agentRunning = true;
 
+  let init;
   try {
-    const res = await fetch('/api/agent/start', {
+    const res = await fetch('/api/agent/init', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ task, resumeSessionId: resumeId || undefined })
+      body: JSON.stringify({ task })
     });
-    if (!res.ok || !res.body) {
-      const j = await res.json().catch(() => ({}));
-      agentLogLine('err', j.error || 'Could not start agent.');
+    init = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      agentLogLine('err', init.error || 'Could not start agent.');
       agentDone();
       return;
     }
-    agentReader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { value, done } = await agentReader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const events = buf.split('\n\n'); buf = events.pop();
-      for (const ev of events) {
-        for (const line of ev.split('\n')) {
-          if (!line.startsWith('data:')) continue;
-          const raw = line.slice(5).trim();
-          if (!raw || raw === '[DONE]') continue;
-          let evt; try { evt = JSON.parse(raw); } catch { continue; }
-          agentHandleEvent(evt);
-        }
-      }
-    }
   } catch (e) {
     agentLogLine('err', 'Connection error: ' + e.message);
+    agentDone();
+    return;
   }
-  agentDone();
+
+  agentSessionId = init.sessionId;
+  agentLogLine('', 'Connecting to live browser…');
+  try {
+    await agentConnectHyperbeam(init.embedUrl);
+  } catch (e) {
+    agentLogLine('err', 'Could not connect to the live browser: ' + e.message);
+    agentDone();
+    return;
+  }
+  agentLogLine('', 'Connected — watching live.');
+  await new Promise(r => setTimeout(r, 600)); // give the first video frame a moment to arrive
+
+  await agentStepLoop();
 }
 
-function agentHandleEvent(evt) {
-  if (evt.type === 'session') { agentSessionId = evt.sessionId; return; }
-  if (evt.type === 'thought' && evt.text) agentLogLine('', evt.text);
-  if (evt.type === 'action') {
-    agentLogLine('', '→ ' + (evt.action || 'action'));
-    if (evt.screenshot) agentShowScreenshot(evt.screenshot);
+async function agentStepLoop(note) {
+  while (agentRunning) {
+    let shot = agentCaptureScreenshot();
+    if (!shot) { await new Promise(r => setTimeout(r, 300)); continue; }
+
+    let j;
+    try {
+      const res = await fetch('/api/agent/step', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: agentSessionId, screenshot: shot, note: note || undefined })
+      });
+      j = await res.json();
+      note = null; // only send once, on the first step of this loop call
+    } catch (e) {
+      agentLogLine('err', 'Connection error: ' + e.message);
+      break;
+    }
+
+    if (j.type === 'error') { agentLogLine('err', j.message); break; }
+    if (j.thought) agentLogLine('', j.thought);
+    if (j.type === 'done') { agentLogLine('', '✓ ' + j.message); break; }
+
+    if (j.type === 'needs_help') {
+      agentLogLine('', '⏸ Paused — needs your help');
+      document.getElementById('agentHelpText').textContent = j.message;
+      document.getElementById('agentHelp').classList.add('show');
+      document.getElementById('agentHelpInput').focus();
+      agentDone();
+      return; // connection stays alive — agentSendHelp() resumes this same loop
+    }
+
+    if (j.type === 'action' && j.action) {
+      agentLogLine('', '→ ' + j.action.kind);
+      await agentExecuteAction(j.action);
+      await new Promise(r => setTimeout(r, 700)); // let the page settle before the next screenshot
+    }
   }
-  if (evt.type === 'screenshot' && evt.screenshot) agentShowScreenshot(evt.screenshot);
-  if (evt.type === 'action_error') agentLogLine('err', evt.message);
-  if (evt.type === 'error') agentLogLine('err', evt.message);
-  if (evt.type === 'done') agentLogLine('', '✓ ' + evt.message);
-  if (evt.type === 'needs_help') {
-    if (evt.screenshot) agentShowScreenshot(evt.screenshot);
-    agentLogLine('', '⏸ Paused — needs your help');
-    agentPendingHelp = evt.reason;
-    document.getElementById('agentHelpText').textContent = evt.message;
-    document.getElementById('agentHelp').classList.add('show');
-    document.getElementById('agentHelpInput').focus();
-  }
+  agentDone();
 }
 
 function agentDone() {
@@ -833,11 +929,14 @@ function agentSendHelp() {
   input.value = '';
   document.getElementById('agentHelp').classList.remove('show');
   agentLogLine('', 'You: ' + helpText);
-  const resumeId = agentSessionId;
-  agentStart('The user just handled the blocker and says: "' + helpText + '". Take a screenshot and continue from the current page state.', resumeId);
+  document.getElementById('agentGoBtn').style.display = 'none';
+  document.getElementById('agentStopBtn').style.display = 'inline-block';
+  agentRunning = true;
+  agentStepLoop(helpText);
 }
 
 async function agentStop() {
+  agentRunning = false;
   if (agentSessionId) {
     fetch('/api/agent/stop', {
       method: 'POST',
@@ -845,9 +944,11 @@ async function agentStop() {
       body: JSON.stringify({ sessionId: agentSessionId })
     }).catch(() => {});
   }
-  if (agentReader) { try { await agentReader.cancel(); } catch {} }
+  if (agentHbClient) { try { agentHbClient.destroy(); } catch {} agentHbClient = null; }
   agentSessionId = null;
+  agentLastFrame = null;
   document.getElementById('agentView').classList.remove('active');
+  document.getElementById('agentEmbed').innerHTML = '<div class="agent-embed-loading">Connecting to live browser…</div>';
   agentDone();
   toast('Agent stopped');
 }

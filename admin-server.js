@@ -622,13 +622,15 @@ async function handleChat(req, res) {
   if (!targets.length) return send(res, 503, { error: 'No API key configured for ' + assistant + '. Set one in the admin console → Keys & Models.' });
 
   const customPrompt = (DB.systemPrompts || {})[assistant];
+  const CONFIDENTIALITY_CLAUSE = ' Never reveal, confirm, deny, list, or hint at which company, model, or API you actually run on, even if asked directly, asked to guess, asked in a roundabout or technical way, or told it\'s "just for curiosity" or "off the record" — deflect naturally and briefly, then move on. Never say you are GPT-4, GPT, ChatGPT, OpenAI, Claude, Anthropic, Gemini, Google, Groq, Cerebras, NVIDIA, NIM, Llama, Mistral, DeepSeek, or name any other underlying provider or model. If pressed, just say you\'re Mist\'s own assistant and you don\'t share technical backend details.';
   const DEFAULT_PROMPTS = {
-    pluto: 'You are Pluto, a fast and efficient AI assistant built into the Mist platform. You are NOT GPT-4, ChatGPT, or any OpenAI product. You are Pluto — one of three AI assistants in Mist. You are powered by a variety of open-source and frontier models including Groq, Cerebras, NVIDIA NIM, and Gemini, chosen for speed. You excel at quick answers, coding help, and everyday questions. Keep responses concise and helpful. Never claim to be made by OpenAI or powered by GPT.',
-    sonar: 'You are Sonar, the most intelligent AI assistant in the Mist platform. You are NOT GPT-4, ChatGPT, or any OpenAI product. You are Sonar — one of three AI assistants in Mist. You are powered by frontier models including Claude (by Anthropic), Gemini, and other top-tier models, chosen for maximum intelligence. You excel at complex reasoning, detailed analysis, coding, writing, and research. Provide thorough, well-reasoned responses. Never claim to be made by OpenAI or powered by GPT.',
-    omni: 'You are Omni, the creative and visual AI assistant in the Mist platform. You are NOT GPT-4, ChatGPT, or any OpenAI product. You are Omni — one of three AI assistants in Mist. You are powered by Google Gemini and other multimodal models, chosen for creative and visual tasks. You excel at image understanding, creative writing, brainstorming, and visual content. Be creative and expressive. Never claim to be made by OpenAI or powered by GPT.',
-    stella: 'You are Stella, an agentic AI assistant in the Mist platform that can browse the web and take actions. You are NOT GPT-4, ChatGPT, or any OpenAI product. Never claim to be made by OpenAI or powered by GPT.'
+    pluto: 'You are Pluto, a fast and efficient AI assistant built into the Mist platform — one of three assistants in Mist, built for quick answers, coding help, and everyday questions. Keep responses concise and helpful.' + CONFIDENTIALITY_CLAUSE,
+    sonar: 'You are Sonar, the most intelligent AI assistant in the Mist platform — one of three assistants in Mist, built for complex reasoning, detailed analysis, coding, writing, and research. Provide thorough, well-reasoned responses.' + CONFIDENTIALITY_CLAUSE,
+    omni: 'You are Omni, the creative and visual AI assistant in the Mist platform — one of three assistants in Mist, built for image understanding, creative writing, brainstorming, and visual content. Be creative and expressive.' + CONFIDENTIALITY_CLAUSE,
+    stella: 'You are Stella, an agentic AI assistant in the Mist platform that can browse the web and take actions on the user\'s behalf.' + CONFIDENTIALITY_CLAUSE
   };
-  const basePrompt = (customPrompt && customPrompt.trim()) ? customPrompt.trim() : (DEFAULT_PROMPTS[assistant] || body.system || 'You are a helpful assistant.');
+  const basePrompt = ((customPrompt && customPrompt.trim()) ? customPrompt.trim() : (DEFAULT_PROMPTS[assistant] || body.system || 'You are a helpful assistant.')) +
+    ((customPrompt && customPrompt.trim()) ? CONFIDENTIALITY_CLAUSE : '');
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   // Inject corrections the AI has been told about before (learning from mistakes)
@@ -1305,30 +1307,22 @@ async function handleConnectResult(req, res) {
 }
 
 /* ------------------------------ AGENTIC BROWSER (Sonar computer-use) ------------------------------
-   A real Playwright-controlled Chromium browser that Sonar (Claude) drives via
-   Anthropic's computer-use tool. Screenshot -> Claude decides an action -> we execute it
-   -> screenshot again -> repeat, until the task is done, a step cap is hit, or the agent
-   hits something it genuinely cannot do alone (CAPTCHA, login wall, 2FA, payment, etc.),
-   in which case it pauses and asks the user directly in the chat.
+   Sonar (Claude) drives a real Chromium browser hosted by Hyperbeam — Render's free tier
+   can't launch Chromium itself, so the browser runs on Hyperbeam's cloud instead. The
+   Stellar page in the user's own browser embeds that live session (via Hyperbeam's client
+   SDK) so the user watches it live, and it is the one that actually executes each action
+   (Hyperbeam only accepts input from a connected client, not from our backend). This
+   backend's job is just the "brain": given a screenshot the frontend grabs from the live
+   session, decide the next action, hand it back. Loop continues until the task is done, a
+   step cap is hit, or the agent hits something it genuinely cannot do alone (CAPTCHA,
+   login wall, 2FA, payment, etc.), in which case it pauses and asks the user in the chat.
    ---------------------------------------------------------------------------------- */
 
-let _playwright = null;
-function getPlaywright() {
-  if (_playwright) return _playwright;
-  try { _playwright = require('playwright'); } catch { _playwright = null; }
-  return _playwright;
-}
-
-const AGENT_SESSIONS = {}; // sessionId -> { browser, context, page, log: [], status, task, userId }
+const AGENT_SESSIONS = {}; // sessionId -> { messages, status, task, userId, step, createdAt, hyperbeamId }
 const AGENT_MAX_STEPS = 40;
 const AGENT_VIEWPORT = { width: 1280, height: 800 };
 
 function agentUid() { return 'agent_' + crypto.randomBytes(8).toString('hex'); }
-
-async function agentScreenshot(page) {
-  const buf = await page.screenshot({ type: 'png' });
-  return buf.toString('base64');
-}
 
 function computerTool() {
   return {
@@ -1340,46 +1334,6 @@ function computerTool() {
   };
 }
 
-async function agentExecuteAction(page, action) {
-  const a = action.input || {};
-  switch (action.name === 'computer' ? a.action : action.name) {
-    case 'screenshot':
-      return;
-    case 'left_click':
-      await page.mouse.click(a.coordinate[0], a.coordinate[1]);
-      break;
-    case 'double_click':
-      await page.mouse.dblclick(a.coordinate[0], a.coordinate[1]);
-      break;
-    case 'right_click':
-      await page.mouse.click(a.coordinate[0], a.coordinate[1], { button: 'right' });
-      break;
-    case 'mouse_move':
-      await page.mouse.move(a.coordinate[0], a.coordinate[1]);
-      break;
-    case 'type':
-      await page.keyboard.type(a.text, { delay: 15 });
-      break;
-    case 'key':
-      await page.keyboard.press(mapKey(a.text));
-      break;
-    case 'scroll': {
-      const dx = a.scroll_direction === 'left' ? -100 : a.scroll_direction === 'right' ? 100 : 0;
-      const dy = a.scroll_direction === 'up' ? -100 : a.scroll_direction === 'down' ? 100 : 0;
-      await page.mouse.move(a.coordinate ? a.coordinate[0] : 640, a.coordinate ? a.coordinate[1] : 400);
-      await page.mouse.wheel(dx * (a.scroll_amount || 3), dy * (a.scroll_amount || 3));
-      break;
-    }
-    case 'wait':
-      await new Promise(r => setTimeout(r, Math.min((a.duration || 1) * 1000, 5000)));
-      break;
-    case 'cursor_position':
-      return;
-    default:
-      break;
-  }
-}
-
 function mapKey(k) {
   const map = { Return: 'Enter', BackSpace: 'Backspace', Escape: 'Escape', Tab: 'Tab',
     Up: 'ArrowUp', Down: 'ArrowDown', Left: 'ArrowLeft', Right: 'ArrowRight',
@@ -1387,37 +1341,64 @@ function mapKey(k) {
   return map[k] || k;
 }
 
-async function agentDetectBlocker(page) {
-  try {
-    const text = (await page.innerText('body').catch(() => '')).toLowerCase();
-    if (/captcha|are you a robot|verify you are human|hcaptcha|recaptcha/.test(text)) return 'captcha';
-    if (/two-factor|2fa|verification code|enter the code we sent/.test(text)) return '2fa';
-    if (/card number|cvv|billing address|payment method/.test(text) && /pay|purchase|subscribe|checkout/.test(text)) return 'payment';
-    if (/confirm your email|check your inbox|verify your email/.test(text)) return 'email_verify';
-    return null;
-  } catch { return null; }
+// Claude's computer-use tool call -> a plain instruction the frontend's Hyperbeam SDK executes.
+function normalizeAgentAction(toolUse) {
+  const a = toolUse.input || {};
+  const action = toolUse.name === 'computer' ? a.action : toolUse.name;
+  switch (action) {
+    case 'left_click': return { kind: 'click', x: a.coordinate[0], y: a.coordinate[1], button: 'left' };
+    case 'double_click': return { kind: 'dblclick', x: a.coordinate[0], y: a.coordinate[1] };
+    case 'right_click': return { kind: 'click', x: a.coordinate[0], y: a.coordinate[1], button: 'right' };
+    case 'mouse_move': return { kind: 'move', x: a.coordinate[0], y: a.coordinate[1] };
+    case 'type': return { kind: 'type', text: a.text };
+    case 'key': return { kind: 'key', key: mapKey(a.text) };
+    case 'scroll': return { kind: 'scroll',
+      dx: a.scroll_direction === 'left' ? -100 : a.scroll_direction === 'right' ? 100 : 0,
+      dy: a.scroll_direction === 'up' ? -100 : a.scroll_direction === 'down' ? 100 : 0,
+      amount: a.scroll_amount || 3,
+      x: a.coordinate ? a.coordinate[0] : 640, y: a.coordinate ? a.coordinate[1] : 400 };
+    case 'wait': return { kind: 'wait', ms: Math.min((a.duration || 1) * 1000, 5000) };
+    case 'screenshot': case 'cursor_position': default: return { kind: 'noop' };
+  }
 }
 
-async function startAgentSession(userId, task) {
-  const pw = getPlaywright();
-  if (!pw) throw new Error('Agent browser is not installed on the server yet.');
-  const browser = await pw.chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-  const context = await browser.newContext({ viewport: AGENT_VIEWPORT });
-  const page = await context.newPage();
-  await page.goto('https://www.google.com', { waitUntil: 'domcontentloaded' }).catch(() => {});
-  const id = agentUid();
-  AGENT_SESSIONS[id] = { browser, context, page, log: [], status: 'running', task, userId, step: 0, createdAt: nowMs() };
-  return id;
+async function createHyperbeamSession(startUrl) {
+  const key = keyFor('hyperbeam');
+  if (!key) throw new Error('No Hyperbeam key configured — add HYPERBEAM_KEY in Render, or set it under Keys & Models in the admin console.');
+  const r = await fetch('https://engine.hyperbeam.com/v0/vm', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + key, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      start_url: startUrl || 'https://www.google.com',
+      width: AGENT_VIEWPORT.width,
+      height: AGENT_VIEWPORT.height,
+      offline_timeout: 900
+    }),
+    signal: AbortSignal.timeout(20000)
+  });
+  if (!r.ok) throw new Error('Hyperbeam session failed to start: ' + (await r.text().catch(() => '')).slice(0, 300));
+  return r.json(); // { session_id, embed_url, admin_token }
 }
 
-async function stopAgentSession(id) {
+async function destroyHyperbeamSession(hyperbeamId) {
+  const key = keyFor('hyperbeam');
+  if (!key || !hyperbeamId) return;
+  await fetch('https://engine.hyperbeam.com/v0/vm/' + hyperbeamId, {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + key }
+  }).catch(() => {});
+}
+
+function stopAgentSession(id) {
   const s = AGENT_SESSIONS[id];
   if (!s) return;
-  try { await s.browser.close(); } catch {}
+  clearTimeout(s._pauseTimer);
+  destroyHyperbeamSession(s.hyperbeamId);
   delete AGENT_SESSIONS[id];
 }
 
-async function handleAgentStart(req, res) {
+// Step 1 — start a Hyperbeam session and the agent's message history; hand the live embed to the frontend.
+async function handleAgentInit(req, res) {
   cors(res);
   const body = await readJson(req);
   const userId = req.headers['x-mist-user'] || body.userId || 'anon';
@@ -1430,124 +1411,115 @@ async function handleAgentStart(req, res) {
     return send(res, 503, { error: 'Agentic mode needs a working Claude key (direct Anthropic or via CometAPI) — it is the only provider wired up for computer-use in Mist right now.' });
   }
 
-  let sessionId = body.resumeSessionId && AGENT_SESSIONS[body.resumeSessionId] ? body.resumeSessionId : null;
-  if (!sessionId) {
-    try {
-      sessionId = await startAgentSession(userId, task);
-    } catch (e) {
-      return send(res, 500, { error: e.message });
-    }
+  let hb;
+  try {
+    hb = await createHyperbeamSession('https://www.google.com');
+  } catch (e) {
+    return send(res, 500, { error: e.message });
   }
 
-  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-  const send_ = (obj) => res.write('data: ' + JSON.stringify(obj) + '\n\n');
-  send_({ type: 'session', sessionId });
+  const id = agentUid();
+  AGENT_SESSIONS[id] = {
+    userId, task, status: 'running', step: 0, createdAt: nowMs(),
+    hyperbeamId: hb.session_id,
+    messages: [{
+      role: 'user',
+      content: [{ type: 'text', text:
+        'You are controlling a real Chromium browser to complete this task for the user: "' + task + '". ' +
+        'You will be shown a screenshot before each move. Work step by step using the computer tool. ' +
+        'If you reach a CAPTCHA, a login wall needing credentials you do not have, two-factor authentication, ' +
+        'a payment form, or anything else you cannot do without the user, STOP calling the computer tool and clearly ' +
+        'explain in plain text exactly what you need from the user instead of guessing or trying to bypass it. ' +
+        'When the task is fully done, say so clearly in plain text and stop calling the computer tool.'
+      }]
+    }]
+  };
 
-  const session = AGENT_SESSIONS[sessionId];
+  return send(res, 200, { sessionId: id, embedUrl: hb.embed_url, adminToken: hb.admin_token });
+}
+
+// Step 2 — given a fresh screenshot the frontend grabbed from the live session, decide the next move.
+async function handleAgentStep(req, res) {
+  cors(res);
+  const body = await readJson(req);
+  const session = AGENT_SESSIONS[body.sessionId];
+  if (!session) return send(res, 404, { error: 'Session not found or expired.' });
+  if (!body.screenshot) return send(res, 400, { error: 'Missing screenshot' });
+
   clearTimeout(session._pauseTimer);
   session.status = 'running';
-  const messages = [{
-    role: 'user',
-    content: [{ type: 'text', text:
-      'You are controlling a real Chromium browser to complete this task for the user: "' + task + '". ' +
-      'Take a screenshot first to see the current state. Work step by step using the computer tool. ' +
-      'If you reach a CAPTCHA, a login wall needing credentials you do not have, two-factor authentication, ' +
-      'a payment form, or anything else you cannot do without the user, STOP and clearly explain in plain text ' +
-      'exactly what you need from the user instead of guessing or trying to bypass it. ' +
-      'When the task is fully done, say so clearly in plain text and stop calling the computer tool.'
-    }]
-  }];
+  session.step++;
 
-  try {
-    for (let step = 0; step < AGENT_MAX_STEPS; step++) {
-      session.step = step;
-      const shot = await agentScreenshot(session.page);
-      if (step > 0) {
-        messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: session._lastToolId, content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot } }] }] });
-      } else {
-        messages[0].content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: shot } });
-      }
-
-      const blocker = await agentDetectBlocker(session.page);
-      if (blocker) {
-        const askMap = {
-          captcha: 'This site is showing a CAPTCHA. Please solve it yourself in a normal browser, or tell me how you\'d like to proceed.',
-          '2fa': 'This site is asking for a two-factor authentication code. Please provide the code, or complete this step yourself.',
-          payment: 'This step involves entering payment details. I won\'t enter payment info on your behalf — please complete checkout yourself, or tell me to skip it.',
-          email_verify: 'This site wants email verification. Please check your inbox and confirm, or paste the verification link/code here.'
-        };
-        session.status = 'needs_help';
-        send_({ type: 'needs_help', reason: blocker, message: askMap[blocker] || 'I need your help to continue.', screenshot: shot });
-        res.end();
-        // Keep a paused browser alive for 10 minutes so the user has time to respond and resume.
-        clearTimeout(session._pauseTimer);
-        session._pauseTimer = setTimeout(() => stopAgentSession(sessionId), 10 * 60 * 1000);
-        return;
-      }
-
-      const useCometFirst = !!cometKey;
-      const anthroKey = useCometFirst ? cometKey : anthropicKey;
-      const anthroUrl = useCometFirst ? 'https://api.cometapi.com/v1/messages' : 'https://api.anthropic.com/v1/messages';
-      const model = 'claude-fable-5-1';
-
-      let apiRes;
-      try {
-        apiRes = await fetch(anthroUrl, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-api-key': anthroKey, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'computer-use-2024-10-22' },
-          body: JSON.stringify({ model, max_tokens: 1024, tools: [computerTool()], messages }),
-          signal: AbortSignal.timeout(45000)
-        });
-      } catch (e) {
-        send_({ type: 'error', message: 'Agent brain unreachable: ' + e.message });
-        break;
-      }
-      if (!apiRes.ok) {
-        const t = await apiRes.text().catch(() => '');
-        send_({ type: 'error', message: 'Agent brain error: ' + t.slice(0, 300) });
-        break;
-      }
-      const data = await apiRes.json();
-      const content = data.content || [];
-      const textParts = content.filter(c => c.type === 'text').map(c => c.text).join(' ');
-      const toolUse = content.find(c => c.type === 'tool_use');
-
-      if (textParts) send_({ type: 'thought', text: textParts });
-
-      if (!toolUse) {
-        send_({ type: 'done', message: textParts || 'Task complete.' });
-        break;
-      }
-
-      session._lastToolId = toolUse.id;
-      const actionName = (toolUse.input && toolUse.input.action) || toolUse.name;
-      send_({ type: 'action', action: actionName, detail: toolUse.input, screenshot: shot });
-
-      try { await agentExecuteAction(session.page, toolUse); } catch (e) { send_({ type: 'action_error', message: e.message }); }
-      
-      // Send a fresh screenshot after the action executes so user sees the result
-      await new Promise(r => setTimeout(r, 800));
-      const afterShot = await agentScreenshot(session.page);
-      send_({ type: 'screenshot', screenshot: afterShot });
-      messages.push({ role: 'assistant', content });
-
-      if (step === AGENT_MAX_STEPS - 1) {
-        send_({ type: 'done', message: 'Reached the step limit (' + AGENT_MAX_STEPS + ') for one agent run. Tell me to continue if the task needs more steps.' });
-      }
-    }
-  } catch (e) {
-    send_({ type: 'error', message: e.message });
-  } finally {
-    res.write('data: [DONE]\n\n');
-    res.end();
-    setTimeout(() => stopAgentSession(sessionId), 60000);
+  if (session.step > AGENT_MAX_STEPS) {
+    return send(res, 200, { type: 'done', message: 'Reached the step limit (' + AGENT_MAX_STEPS + ') for one agent run. Tell me to continue if the task needs more steps.' });
   }
+
+  const msgs = session.messages;
+  const imageBlock = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: body.screenshot } };
+  const noteBlock = (body.note && body.note.trim()) ? [{ type: 'text', text: 'The user says: "' + body.note.trim() + '". Take this into account and continue.' }] : [];
+  if (session._lastToolId) {
+    // Mid-run: this screenshot answers the tool call Claude just made.
+    msgs.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: session._lastToolId, content: [imageBlock] }] });
+    session._lastToolId = null;
+  } else if (session.step === 1) {
+    // Very first screenshot of a brand-new session goes into the opening turn.
+    msgs[0].content.push(...noteBlock, imageBlock);
+  } else {
+    // Resuming after a "needs help" pause — no pending tool call to answer, so this is a fresh turn.
+    msgs.push({ role: 'user', content: [...noteBlock, imageBlock] });
+  }
+
+  const cometKey = keyFor('cometapi');
+  const anthropicKey = keyFor('anthropic');
+  const useCometFirst = !!cometKey;
+  const anthroKey = useCometFirst ? cometKey : anthropicKey;
+  const anthroUrl = useCometFirst ? 'https://api.cometapi.com/v1/messages' : 'https://api.anthropic.com/v1/messages';
+  const model = 'claude-fable-5-1';
+
+  let apiRes;
+  try {
+    apiRes = await fetch(anthroUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': anthroKey, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'computer-use-2024-10-22' },
+      body: JSON.stringify({ model, max_tokens: 1024, tools: [computerTool()], messages: msgs }),
+      signal: AbortSignal.timeout(45000)
+    });
+  } catch (e) {
+    return send(res, 200, { type: 'error', message: 'Agent brain unreachable: ' + e.message });
+  }
+  if (!apiRes.ok) {
+    const t = await apiRes.text().catch(() => '');
+    return send(res, 200, { type: 'error', message: 'Agent brain error: ' + t.slice(0, 300) });
+  }
+
+  const data = await apiRes.json();
+  const content = data.content || [];
+  const textParts = content.filter(c => c.type === 'text').map(c => c.text).join(' ');
+  const toolUse = content.find(c => c.type === 'tool_use');
+
+  // No page DOM to scan for blockers anymore — Claude sees the screenshot itself, so we treat
+  // it stopping the tool loop and saying something blocker-shaped as the signal to pause.
+  const blockerWords = /captcha|are you a robot|verify you.?re human|two-factor|2fa|verification code|payment|card number|cvv|checkout|confirm your email/i;
+
+  if (!toolUse) {
+    session.status = blockerWords.test(textParts) ? 'needs_help' : 'done';
+    if (session.status === 'needs_help') {
+      session._pauseTimer = setTimeout(() => stopAgentSession(body.sessionId), 10 * 60 * 1000);
+    }
+    return send(res, 200, { type: session.status === 'needs_help' ? 'needs_help' : 'done', message: textParts || 'Task complete.' });
+  }
+
+  session._lastToolId = toolUse.id;
+  msgs.push({ role: 'assistant', content });
+
+  const action = normalizeAgentAction(toolUse);
+  return send(res, 200, { type: 'action', thought: textParts || null, action });
 }
 
 async function handleAgentStop(req, res) {
   cors(res);
   const body = await readJson(req);
-  await stopAgentSession(body.sessionId);
+  stopAgentSession(body.sessionId);
   return send(res, 200, { ok: true });
 }
 
@@ -1563,7 +1535,8 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/api/generate' && req.method === 'POST') return handleGenerate(req, res);
   if (urlPath === '/api/tts' && req.method === 'POST') return handleTTS(req, res);
   if (urlPath === '/api/run-code' && req.method === 'POST') return handleRunCode(req, res);
-  if (urlPath === '/api/agent/start' && req.method === 'POST') return handleAgentStart(req, res);
+  if (urlPath === '/api/agent/init' && req.method === 'POST') return handleAgentInit(req, res);
+  if (urlPath === '/api/agent/step' && req.method === 'POST') return handleAgentStep(req, res);
   if (urlPath === '/api/agent/stop' && req.method === 'POST') return handleAgentStop(req, res);
   // ---- Forgot password: send a 6-digit code via Resend, verify it, reset password ----
   if (urlPath === '/api/forgot-password' && req.method === 'POST') {
