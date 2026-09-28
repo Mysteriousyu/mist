@@ -1330,18 +1330,62 @@ const AGENT_HELP_IDLE_MS = 10 * 60 * 1000;
 
 function agentUid() { return 'agent_' + crypto.randomBytes(8).toString('hex'); }
 
-// CometAPI routes claude-fable-5-1 through Amazon Bedrock, which is still on the older
-// computer_20251124 tool + beta header. Hitting api.anthropic.com directly for the same
-// model wants the newer computer_toolset_20260801 with no beta header at all. Same model
-// name, two different wire formats depending on which backend actually serves it.
-function computerTool(viaBedrock) {
+// Which computer-use tool schema + beta header "claude-fable-5-1" actually accepts depends on
+// which backend the account routes through (Anthropic's own API, or Bedrock via CometAPI) —
+// and that has changed between CometAPI accounts we've tried, not just between providers. So
+// instead of hardcoding a guess, we try candidates in order and remember whichever one this
+// account actually accepts, self-healing if the configured key ever changes underneath us.
+const AGENT_TOOL_CANDIDATES = [
+  { type: 'computer_toolset_20260801', beta: null },
+  { type: 'computer_20251124', beta: 'computer-use-2025-11-24' },
+  { type: 'computer_20250124', beta: 'computer-use-2025-01-24' }
+];
+let agentWorkingToolSchema = null; // cached once we find one that works, tried first next time
+
+function computerToolFor(schema) {
   return {
-    type: viaBedrock ? 'computer_20251124' : 'computer_toolset_20260801',
+    type: schema.type,
     name: 'computer',
     display_width_px: AGENT_VIEWPORT.width,
     display_height_px: AGENT_VIEWPORT.height,
     display_number: 1
   };
+}
+
+// Calls Claude's computer-use endpoint, trying each known tool-schema version until one is
+// accepted. Any error OTHER than "wrong tool version" (auth, quota, rate limit, etc.) fails
+// immediately instead of wasting two more calls retrying schemas that were never the problem.
+async function callAgentBrain(anthroUrl, anthroKey, msgs) {
+  const ordered = agentWorkingToolSchema
+    ? [agentWorkingToolSchema, ...AGENT_TOOL_CANDIDATES.filter(c => c.type !== agentWorkingToolSchema.type)]
+    : AGENT_TOOL_CANDIDATES;
+
+  let lastErrText = '';
+  for (const schema of ordered) {
+    const headers = { 'content-type': 'application/json', 'x-api-key': anthroKey, 'anthropic-version': '2023-06-01' };
+    if (schema.beta) headers['anthropic-beta'] = schema.beta;
+
+    let apiRes;
+    try {
+      apiRes = await fetch(anthroUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model: 'claude-fable-5-1', max_tokens: 1024, tools: [computerToolFor(schema)], messages: msgs }),
+        signal: AbortSignal.timeout(45000)
+      });
+    } catch (e) {
+      return { error: 'Agent brain unreachable: ' + e.message };
+    }
+
+    if (apiRes.ok) {
+      agentWorkingToolSchema = schema;
+      return { data: await apiRes.json() };
+    }
+
+    lastErrText = await apiRes.text().catch(() => '');
+    if (!/tool type|is not supported for this model/i.test(lastErrText)) break; // some other failure — don't keep guessing schemas
+  }
+  return { error: 'Agent brain error: ' + lastErrText.slice(0, 300) };
 }
 
 function mapKey(k) {
@@ -1494,33 +1538,17 @@ async function handleAgentStep(req, res) {
 
   const cometKey = keyFor('cometapi');
   const anthropicKey = keyFor('anthropic');
-  const useCometFirst = !!cometKey; // CometAPI proxies this model through Bedrock
+  const useCometFirst = !!cometKey;
   const anthroKey = useCometFirst ? cometKey : anthropicKey;
   const anthroUrl = useCometFirst ? 'https://api.cometapi.com/v1/messages' : 'https://api.anthropic.com/v1/messages';
-  const model = 'claude-fable-5-1';
 
-  const headers = { 'content-type': 'application/json', 'x-api-key': anthroKey, 'anthropic-version': '2023-06-01' };
-  if (useCometFirst) headers['anthropic-beta'] = 'computer-use-2025-11-24'; // not needed/accepted on direct API
-
-  let apiRes;
-  try {
-    apiRes = await fetch(anthroUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ model, max_tokens: 1024, tools: [computerTool(useCometFirst)], messages: msgs }),
-      signal: AbortSignal.timeout(45000)
-    });
-  } catch (e) {
+  const result = await callAgentBrain(anthroUrl, anthroKey, msgs);
+  if (result.error) {
     stopAgentSession(body.sessionId); // brain call failed outright — don't leave the VM running
-    return send(res, 200, { type: 'error', message: 'Agent brain unreachable: ' + e.message });
-  }
-  if (!apiRes.ok) {
-    const t = await apiRes.text().catch(() => '');
-    stopAgentSession(body.sessionId);
-    return send(res, 200, { type: 'error', message: 'Agent brain error: ' + t.slice(0, 300) });
+    return send(res, 200, { type: 'error', message: result.error });
   }
 
-  const data = await apiRes.json();
+  const data = result.data;
   const content = data.content || [];
   const textParts = content.filter(c => c.type === 'text').map(c => c.text).join(' ');
   const toolUse = content.find(c => c.type === 'tool_use');
