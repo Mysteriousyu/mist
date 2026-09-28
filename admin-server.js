@@ -1343,6 +1343,12 @@ const AGENT_TOOL_CANDIDATES = [
 let agentWorkingToolSchema = null; // cached once we find one that works, tried first next time
 
 function computerToolFor(schema) {
+  if (schema.type === 'computer_toolset_20260801') {
+    // The newer toolset entry takes ONLY a type field — no name/display_*, those fields
+    // make Bedrock reject it outright. Coordinates come back in the screenshot's own pixel
+    // space instead, which already matches AGENT_VIEWPORT since that's what we screenshot at.
+    return { type: schema.type };
+  }
   return {
     type: schema.type,
     name: 'computer',
@@ -1383,7 +1389,10 @@ async function callAgentBrain(anthroUrl, anthroKey, msgs) {
     }
 
     lastErrText = await apiRes.text().catch(() => '');
-    if (!/tool type|is not supported for this model/i.test(lastErrText)) break; // some other failure — don't keep guessing schemas
+    // Any Bedrock ValidationException that mentions our tool entry means the schema shape or
+    // version was wrong — worth trying the next candidate. Anything else (quota, auth, rate
+    // limit — none of which come back as ValidationException) is a real failure, so stop.
+    if (!(/ValidationException/i.test(lastErrText) && /tool/i.test(lastErrText))) break;
   }
   return { error: 'Agent brain error: ' + lastErrText.slice(0, 300) };
 }
@@ -1396,9 +1405,12 @@ function mapKey(k) {
 }
 
 // Claude's computer-use tool call -> a plain instruction the frontend's Hyperbeam SDK executes.
+// The two schema families shape this differently: the older computer_2025xxxx tools send
+// name:'computer' with the actual action in input.action; the newer computer_toolset_20260801
+// sends the action name directly as `name` (with toolset_name:'computer') and no input.action.
 function normalizeAgentAction(toolUse) {
   const a = toolUse.input || {};
-  const action = toolUse.name === 'computer' ? a.action : toolUse.name;
+  const action = toolUse.toolset_name ? toolUse.name : (toolUse.name === 'computer' ? a.action : toolUse.name);
   switch (action) {
     case 'left_click': return { kind: 'click', x: a.coordinate[0], y: a.coordinate[1], button: 'left' };
     case 'double_click': return { kind: 'dblclick', x: a.coordinate[0], y: a.coordinate[1] };
