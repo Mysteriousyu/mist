@@ -1330,15 +1330,21 @@ const AGENT_HELP_IDLE_MS = 10 * 60 * 1000;
 
 function agentUid() { return 'agent_' + crypto.randomBytes(8).toString('hex'); }
 
-// Which computer-use tool schema + beta header "claude-fable-5-1" actually accepts depends on
-// which backend the account routes through (Anthropic's own API, or Bedrock via CometAPI) —
-// and that has changed between CometAPI accounts we've tried, not just between providers. So
-// instead of hardcoding a guess, we try candidates in order and remember whichever one this
-// account actually accepts, self-healing if the configured key ever changes underneath us.
-const AGENT_TOOL_CANDIDATES = [
-  { type: 'computer_toolset_20260801', beta: null },
-  { type: 'computer_20251124', beta: 'computer-use-2025-11-24' },
-  { type: 'computer_20250124', beta: 'computer-use-2025-01-24' }
+// Which computer-use tool schema "claude-fable-5-1" accepts depends on which backend actually
+// serves the request — confirmed against Anthropic's current docs (Oct 2026):
+//   - Direct Claude API (api.anthropic.com): the current computer_toolset_20260801, no beta
+//     header. This is the only option for newer models and is GA for Fable 5.1 here.
+//   - Amazon Bedrock (what CometAPI routes claude-fable-5-1 through): Anthropic's own docs say
+//     the toolset "is not currently available on Bedrock" — so don't even try it there. Fable
+//     5.1 on Bedrock needs the older computer_20251124 + the computer-use-2025-11-24 beta
+//     header instead. computer_20250124 is NEVER valid for Fable 5.1 on either platform (it's
+//     for Sonnet 4.5/Haiku 4.5/Opus 4.1) — trying it just produces a confusing error, so it's
+//     not in either list below.
+const AGENT_TOOL_CANDIDATES_DIRECT = [
+  { type: 'computer_toolset_20260801', beta: null }
+];
+const AGENT_TOOL_CANDIDATES_BEDROCK = [
+  { type: 'computer_20251124', beta: 'computer-use-2025-11-24' }
 ];
 let agentWorkingToolSchema = null; // cached once we find one that works, tried first next time
 
@@ -1361,10 +1367,11 @@ function computerToolFor(schema) {
 // Calls Claude's computer-use endpoint, trying each known tool-schema version until one is
 // accepted. Any error OTHER than "wrong tool version" (auth, quota, rate limit, etc.) fails
 // immediately instead of wasting two more calls retrying schemas that were never the problem.
-async function callAgentBrain(anthroUrl, anthroKey, msgs) {
-  const ordered = agentWorkingToolSchema
-    ? [agentWorkingToolSchema, ...AGENT_TOOL_CANDIDATES.filter(c => c.type !== agentWorkingToolSchema.type)]
-    : AGENT_TOOL_CANDIDATES;
+async function callAgentBrain(anthroUrl, anthroKey, msgs, viaBedrock) {
+  const candidates = viaBedrock ? AGENT_TOOL_CANDIDATES_BEDROCK : AGENT_TOOL_CANDIDATES_DIRECT;
+  const ordered = (agentWorkingToolSchema && candidates.some(c => c.type === agentWorkingToolSchema.type))
+    ? [agentWorkingToolSchema, ...candidates.filter(c => c.type !== agentWorkingToolSchema.type)]
+    : candidates;
 
   let lastErrText = '';
   for (const schema of ordered) {
@@ -1554,7 +1561,7 @@ async function handleAgentStep(req, res) {
   const anthroKey = useCometFirst ? cometKey : anthropicKey;
   const anthroUrl = useCometFirst ? 'https://api.cometapi.com/v1/messages' : 'https://api.anthropic.com/v1/messages';
 
-  const result = await callAgentBrain(anthroUrl, anthroKey, msgs);
+  const result = await callAgentBrain(anthroUrl, anthroKey, msgs, useCometFirst);
   if (result.error) {
     stopAgentSession(body.sessionId); // brain call failed outright — don't leave the VM running
     return send(res, 200, { type: 'error', message: result.error });
