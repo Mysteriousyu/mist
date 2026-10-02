@@ -1540,10 +1540,18 @@ async function handleAgentStep(req, res) {
   const msgs = session.messages;
   const imageBlock = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: body.screenshot } };
   const noteBlock = (body.note && body.note.trim()) ? [{ type: 'text', text: 'The user says: "' + body.note.trim() + '". Take this into account and continue.' }] : [];
-  if (session._lastToolId) {
-    // Mid-run: this screenshot answers the tool call Claude just made.
-    msgs.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: session._lastToolId, content: [imageBlock] }] });
-    session._lastToolId = null;
+  if (session._pendingToolIds && session._pendingToolIds.length) {
+    // Mid-run: this screenshot answers the tool call(s) Claude just made. Claude sometimes emits
+    // more than one tool_use block in a single turn (e.g. a cursor_position/screenshot call
+    // alongside the real action) — every one of those ids needs its own tool_result in this same
+    // next message, or Bedrock/Anthropic rejects the whole history with a "tool_use ids were
+    // found without tool_result blocks" error. Answering all of them with the same fresh
+    // screenshot is a safe, simple response regardless of which tool each id belonged to.
+    msgs.push({
+      role: 'user',
+      content: session._pendingToolIds.map(id => ({ type: 'tool_result', tool_use_id: id, content: [imageBlock] }))
+    });
+    session._pendingToolIds = null;
   } else if (session.step === 1) {
     // Very first screenshot of a brand-new session goes into the opening turn.
     msgs[0].content.push(...noteBlock, imageBlock);
@@ -1583,7 +1591,9 @@ async function handleAgentStep(req, res) {
     return send(res, 200, { type: session.status === 'needs_help' ? 'needs_help' : 'done', message: textParts || 'Task complete.' });
   }
 
-  session._lastToolId = toolUse.id;
+  // Track every tool_use id from this turn, not just the one we act on — any left unanswered
+  // next step is what triggers the "tool_use ids ... without tool_result" validation error.
+  session._pendingToolIds = content.filter(c => c.type === 'tool_use').map(c => c.id);
   msgs.push({ role: 'assistant', content });
   armAgentIdleTimer(body.sessionId, AGENT_IDLE_MS); // still mid-run — reset the "gone quiet" clock
 
