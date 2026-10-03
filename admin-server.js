@@ -104,7 +104,7 @@ function blankData() {
       xplabs:     { label: 'Experiential Labs', format: 'openai',   baseUrl: 'https://api.experientiallabs.ai/v1/chat/completions', apiKey: '',
                     models: ['gpt-6-astra', 'fable-5', 'gpt-5.6-sol', 'gpt-5.6', 'haiku-4.5', 'gemini-3.7-flash'] },
       cometapi:   { label: 'CometAPI (500+ models)', format: 'openai', baseUrl: 'https://api.cometapi.com/v1/chat/completions', apiKey: '',
-                    models: ['gpt-6-astra', 'claude-opus-5', 'claude-fable-5-1', 'gpt-5.6-sol', 'minimax-m3', 'gemini-3.8-flash', 'grok-4.5', 'deepseek-r1'] },
+                    models: ['gpt-6-astra', 'claude-opus-5', 'claude-fable-5-1', 'gpt-5.6-sol', 'minimax-m3', 'gemini-4-argon', 'gemini-3.8-flash', 'grok-4.5', 'deepseek-r1'] },
       cohere:     { label: 'Cohere',           format: 'openai',    baseUrl: 'https://api.cohere.com/v2/chat', apiKey: '',
                     models: ['command-r-plus', 'command-r', 'command-light'] },
       sambanova:  { label: 'SambaNova',        format: 'openai',    baseUrl: 'https://api.sambanova.ai/v1/chat/completions', apiKey: '',
@@ -197,7 +197,24 @@ let DB = load();
 function load() {
   try {
     const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    return Object.assign(blankData(), d);
+    const merged = Object.assign(blankData(), d);
+    // The saved file's `providers` block completely replaces the code defaults above (shallow
+    // Object.assign), which means a provider's saved `models` list — frozen the moment it was
+    // first written to disk — silently never picks up new model ids added to the code later
+    // (e.g. a newly-released model). Reconcile each saved provider's model list with the current
+    // code defaults, adding anything new while leaving the saved apiKey and everything else as-is.
+    if (merged.providers) {
+      const defaultProviders = blankData().providers;
+      for (const [id, defProv] of Object.entries(defaultProviders)) {
+        const saved = merged.providers[id];
+        if (saved && Array.isArray(saved.models) && Array.isArray(defProv.models)) {
+          for (const m of defProv.models) {
+            if (!saved.models.includes(m)) saved.models.push(m);
+          }
+        }
+      }
+    }
+    return merged;
   } catch {
     const fresh = blankData();
     const salt = crypto.randomBytes(16).toString('hex');
