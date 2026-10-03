@@ -354,7 +354,7 @@ function buildUpstream(providerCfg, model, system, messages) {
       init: {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model, stream: true, max_tokens: 1024, system, messages: normMessages })
+        body: JSON.stringify({ model, stream: true, max_tokens: 8192, system, messages: normMessages })
       }
     };
   }
@@ -370,7 +370,8 @@ function buildUpstream(providerCfg, model, system, messages) {
             const parts = typeof m.content === 'string' ? [{ text: m.content }] : normalizeContent('gemini', m.content);
             return { role: m.role === 'assistant' ? 'model' : 'user', parts };
           }),
-          tools: [{ google_search: {} }]
+          tools: [{ google_search: {} }],
+          generationConfig: { maxOutputTokens: 8192 }
         })
       }
     };
@@ -382,7 +383,7 @@ function buildUpstream(providerCfg, model, system, messages) {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
       body: JSON.stringify({
-        model, stream: true, max_tokens: 1024,
+        model, stream: true, max_tokens: 8192,
         messages: [{ role: 'system', content: system }, ...messages.map(m => ({ role: m.role, content: normalizeContent('openai', m.content) }))]
       })
     }
@@ -652,7 +653,21 @@ async function handleChat(req, res) {
   const basePrompt = ((customPrompt && customPrompt.trim()) ? customPrompt.trim() : (DEFAULT_PROMPTS[assistant] || body.system || 'You are a helpful assistant.')) +
     ((customPrompt && customPrompt.trim()) ? CONFIDENTIALITY_CLAUSE : '');
   const today = new Date();
-  const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  // body.timezone is an optional IANA zone (e.g. "Asia/Calcutta") the frontend can send once it's
+  // wired up to pass one — falls back to UTC (the server's own zone) when it isn't provided, so
+  // this never breaks on old frontend builds. Previously only the DATE was injected here at all,
+  // which is exactly why asking for the current TIME got an honest "I don't have a clock" answer
+  // — there was nothing in its context to answer from. Now both date and time are always included.
+  const tz = (typeof body.timezone === 'string' && body.timezone.trim()) ? body.timezone.trim() : 'UTC';
+  let dateStr, timeStr;
+  try {
+    dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: tz });
+    timeStr = today.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz, timeZoneName: 'short' });
+  } catch {
+    // Invalid/unrecognized timezone string from a client — fall back to UTC rather than erroring.
+    dateStr = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+    timeStr = today.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short' });
+  }
   // Inject corrections the AI has been told about before (learning from mistakes)
   let correctionContext = '';
   if (DB.corrections && DB.corrections.length > 0) {
@@ -676,7 +691,7 @@ async function handleChat(req, res) {
     kbContext = '\n\n[Knowledge base — always follow these facts/rules]:\n' + entries;
   }
 
-  const system = basePrompt + '\n\nToday is ' + dateStr + '.' + (wantsWeb ? ' Search the web for current information.' : '') + kbContext + correctionContext + memoryContext +
+  const system = basePrompt + '\n\nToday is ' + dateStr + '. The current time is ' + timeStr + (tz === 'UTC' ? ' (server time — the user\'s own local time may differ; ask for their timezone if it matters)' : '') + '.' + (wantsWeb ? ' Search the web for current information.' : '') + kbContext + correctionContext + memoryContext +
     '\n\nIMPORTANT: If the user tells you their name, preferences, or any personal fact, save it by including [MEMORY: fact here] at the end of your response. Only do this for new facts worth remembering.';
   const meta = { chatId: body.chatId, title: body.title, assistant };
 

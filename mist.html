@@ -284,19 +284,43 @@ table.data th{color:var(--muted);font-size:11.5px;text-transform:uppercase;lette
 pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:13px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6}
 
 /* Studio */
-.studio{display:grid;grid-template-columns:340px 1fr;gap:0;flex:1;min-height:0}
+.studio{display:grid;grid-template-columns:360px 1fr;gap:0;flex:1;min-height:0;background:var(--bg)}
 .studio-left{border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--surface-2)}
-.studio-left .pad{padding:14px;overflow-y:auto;flex:1}
-.studio-right{display:flex;flex-direction:column;min-height:0}
-.tabs{display:flex;gap:2px;padding:8px 12px;border-bottom:1px solid var(--border);align-items:center}
-.tab{padding:6px 12px;border-radius:var(--r-sm);color:var(--muted);font-weight:600;font-size:13px}
-.tab.on{background:var(--surface-3);color:var(--text)}
-.studio-pane{flex:1;min-height:0;display:none}
+.studio-left .pad{padding:18px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:18px}
+.studio-head{display:flex;align-items:center;gap:11px}
+.studio-head .ico{width:38px;height:38px;border-radius:var(--r-sm);display:grid;place-items:center;background:var(--grad);color:var(--brand-ink);flex:0 0 auto;box-shadow:var(--shadow)}
+.studio-head h2{margin:0;font-size:17px;letter-spacing:-.02em}
+.studio-head p{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.studio-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:15px;display:flex;flex-direction:column;gap:2px}
+.studio-card .field:last-child{margin-bottom:0}
+.studio-actions{display:flex;gap:8px}
+.studio-right{display:flex;flex-direction:column;min-height:0;background:var(--surface-2)}
+.tabs{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);align-items:center}
+.tabswitch{display:flex;gap:3px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-full)}
+.tab{padding:6px 14px;border-radius:var(--r-full);color:var(--muted);font-weight:600;font-size:12.5px;transition:all .14s ease}
+.tab.on{background:var(--surface-3);color:var(--text);box-shadow:var(--shadow)}
+.status-pill{font-size:11px;font-weight:700;letter-spacing:.03em;padding:4px 10px 4px 8px;border-radius:var(--r-full);border:1px solid var(--border-strong);color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.status-pill .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+.status-pill.building{color:var(--brand-ink);background:var(--brand-soft);border-color:transparent}
+.status-pill.building .dot{background:var(--brand);animation:studioPulse 1.1s ease-in-out infinite}
+.status-pill.ready{color:var(--ok);border-color:transparent;background:var(--accent-soft)}
+.status-pill.ready .dot{background:var(--ok)}
+.status-pill.error{color:var(--danger);border-color:transparent;background:var(--danger-soft)}
+.status-pill.error .dot{background:var(--danger)}
+@keyframes studioPulse{0%,100%{opacity:1}50%{opacity:.25}}
+.studio-pane{flex:1;min-height:0;display:none;position:relative}
 .studio-pane.on{display:block}
-#studioPreview{width:100%;height:100%;border:0;background:#fff}
-#studioCode{width:100%;height:100%;border:0;background:var(--surface-2);color:var(--text);font-family:var(--mono);font-size:12.5px;padding:14px;resize:none;outline:none}
-.conn-strip{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
-.conn-tag{font-size:11px;padding:3px 8px;border-radius:var(--r-full);background:var(--surface-3);color:var(--text-2)}
+.preview-frame{position:absolute;inset:14px;border-radius:var(--r-lg);overflow:hidden;border:1px solid var(--border);box-shadow:var(--shadow);background:#fff}
+#studioPreview{width:100%;height:100%;border:0;background:#fff;display:block}
+.studio-empty{position:absolute;inset:14px;z-index:1;border-radius:var(--r-lg);border:1px dashed var(--border-strong);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);background:var(--surface);text-align:center;padding:24px;transition:opacity .18s ease}
+.studio-empty.hidden{display:none}
+.studio-empty .ico{width:46px;height:46px;border-radius:50%;background:var(--surface-3);display:grid;place-items:center;color:var(--text-2)}
+.studio-empty b{color:var(--text-2);font-weight:600;font-size:13.5px}
+.studio-empty span{font-size:12px;max-width:280px}
+#studioCode{width:100%;height:100%;border:0;background:var(--surface-2);color:var(--text);font-family:var(--mono);font-size:12.5px;line-height:1.6;padding:18px;resize:none;outline:none}
+.conn-strip{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.conn-tag{font-size:11px;padding:4px 9px;border-radius:var(--r-full);background:var(--surface-3);color:var(--text-2);display:inline-flex;align-items:center;gap:5px}
+.conn-tag::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--ok);flex:0 0 auto}
 
 /* Artifacts panel */
 .artpanel{
@@ -754,36 +778,55 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
       <div class="studio">
         <div class="studio-left">
           <div class="pad">
-            <h2 style="margin:0 0 4px;font-size:18px;letter-spacing:-.02em">Mist Codespace</h2>
-            <p class="mini" style="margin:0 0 14px">Describe what to build. Mist writes it, previews it live, and you keep the file.</p>
-            <label class="field"><span>Model</span>
-              <select id="studioModel"></select>
-              <small id="studioModelNote"></small>
-            </label>
-            <label class="field"><span>Build</span>
-              <textarea id="studioPrompt" style="font-family:var(--font);font-size:13.5px;min-height:130px" placeholder="A pricing page for a coffee subscription — three tiers, dark theme, sticky nav."></textarea>
-            </label>
-            <label class="field"><span>GitHub repo <small style="font-weight:400">(optional)</small></span>
-              <input id="studioRepo" type="text" placeholder="user/repo or full URL">
-              <small>Paste a public repo URL to give Codespace context about your codebase.</small>
-            </label>
-            <div style="display:flex;gap:8px">
-              <button class="btn grad" id="studioRun" style="flex:1">Build</button>
-              <button class="btn" id="studioStop" style="display:none">Stop</button>
+            <div class="studio-head">
+              <div class="ico"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"><path d="M8 8L4 12l4 4M16 8l4 4-4 4M13.5 5l-3 14"/></svg></div>
+              <div>
+                <h2>Mist Codespace</h2>
+                <p>Describe what to build — Mist writes it and previews it live.</p>
+              </div>
             </div>
-            <div class="section-h" style="margin:22px 0 8px"><h2 style="font-size:14px">Connected tools</h2><button class="btn sm" data-view-jump="connectors">Manage</button></div>
-            <div class="conn-strip" id="studioConns"></div>
+            <div class="studio-card">
+              <label class="field"><span>Model</span>
+                <select id="studioModel"></select>
+                <small id="studioModelNote"></small>
+              </label>
+              <label class="field"><span>Build</span>
+                <textarea id="studioPrompt" style="font-family:var(--font);font-size:13.5px;min-height:130px" placeholder="A pricing page for a coffee subscription — three tiers, dark theme, sticky nav."></textarea>
+              </label>
+              <label class="field"><span>GitHub repo <small style="font-weight:400">(optional)</small></span>
+                <input id="studioRepo" type="text" placeholder="user/repo or full URL">
+                <small>Paste a public repo URL to give Codespace context about your codebase.</small>
+              </label>
+              <div class="studio-actions">
+                <button class="btn grad" id="studioRun" style="flex:1">Build</button>
+                <button class="btn" id="studioStop" style="display:none">Stop</button>
+              </div>
+            </div>
+            <div>
+              <div class="section-h" style="margin:0 0 8px"><h2 style="font-size:14px">Connected tools</h2><button class="btn sm" data-view-jump="connectors">Manage</button></div>
+              <div class="conn-strip" id="studioConns"></div>
+            </div>
           </div>
         </div>
         <div class="studio-right">
           <div class="tabs">
-            <button class="tab on" data-pane="preview">Preview</button>
-            <button class="tab" data-pane="code">Code</button>
+            <div class="tabswitch">
+              <button class="tab on" data-pane="preview">Preview</button>
+              <button class="tab" data-pane="code">Code</button>
+            </div>
+            <span class="status-pill" id="studioStatus"><span class="dot"></span><span id="studioStatusText">Idle</span></span>
             <span class="spacer"></span>
             <button class="btn sm" id="studioSave">Save as artifact</button>
             <button class="btn sm" id="studioDownload">Download</button>
           </div>
-          <div class="studio-pane on" id="pane-preview"><iframe id="studioPreview" title="Preview" sandbox="allow-scripts allow-forms allow-modals"></iframe></div>
+          <div class="studio-pane on" id="pane-preview">
+            <div class="studio-empty" id="studioEmpty">
+              <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 8L4 12l4 4M16 8l4 4-4 4M13.5 5l-3 14"/></svg></div>
+              <b>Nothing built yet</b>
+              <span>Describe what you want on the left and hit Build — the live preview shows up here.</span>
+            </div>
+            <div class="preview-frame"><iframe id="studioPreview" title="Preview" sandbox="allow-scripts allow-forms allow-modals"></iframe></div>
+          </div>
           <div class="studio-pane" id="pane-code"><textarea id="studioCode" spellcheck="false" aria-label="Generated code"></textarea></div>
         </div>
       </div>
@@ -2655,7 +2698,15 @@ $$('.tab[data-pane]').forEach(t => t.onclick = () => {
   $$('.tab[data-pane]').forEach(x => x.classList.toggle('on', x === t));
   $$('.studio-pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + t.dataset.pane));
 });
-$('#studioCode').addEventListener('input', () => { $('#studioPreview').srcdoc = $('#studioCode').value; });
+function setStudioStatus(kind, text) {
+  const el = $('#studioStatus');
+  el.className = 'status-pill' + (kind ? ' ' + kind : '');
+  $('#studioStatusText').textContent = text;
+}
+function updateStudioEmpty() {
+  $('#studioEmpty').classList.toggle('hidden', !!$('#studioCode').value.trim());
+}
+$('#studioCode').addEventListener('input', () => { $('#studioPreview').srcdoc = $('#studioCode').value; updateStudioEmpty(); });
 
 const STUDIO_SYSTEM = MIST2_PROMPT + `
 
@@ -2692,7 +2743,8 @@ async function studioBuild() {
   if (!prompt || S.studioBusy) return;
   S.studioBusy = true;
   $('#studioRun').textContent = 'Building…'; $('#studioStop').style.display = '';
-  const codeEl = $('#studioCode'); codeEl.value = '';
+  setStudioStatus('building', 'Building…');
+  const codeEl = $('#studioCode'); codeEl.value = ''; updateStudioEmpty();
   const ctrl = new AbortController(); studioBuild.ctrl = ctrl;
 
   const byok = S.studioModel.startsWith('byok:') ? store.get('mist.byok', [])[+S.studioModel.split(':')[1]] : null;
@@ -2701,6 +2753,7 @@ async function studioBuild() {
   const finalPrompt = repoContext ? prompt + repoContext : prompt;
   const onDelta = t => {
     codeEl.value += t;
+    updateStudioEmpty();
     clearTimeout(studioBuild.t);
     studioBuild.t = setTimeout(() => { $('#studioPreview').srcdoc = codeEl.value; }, 220);
   };
@@ -2723,6 +2776,8 @@ async function studioBuild() {
     }
     codeEl.value = codeEl.value.replace(/^\s*```[\w]*\s*\n?/, '').replace(/```\s*$/, '');
     $('#studioPreview').srcdoc = codeEl.value;
+    updateStudioEmpty();
+    setStudioStatus('ready', 'Ready');
     toast('Build finished');
   } catch (e) {
     if (e.name !== 'AbortError') {
@@ -2730,7 +2785,11 @@ async function studioBuild() {
         ? 'No model server answered at ' + S.config.endpoint + '. Check that your Render service is running and API keys are configured in the admin console.'
         : e.message;
       $('#studioPreview').srcdoc = '<body style="font:15px/1.6 system-ui;padding:28px;color:#b3311a">' + esc(msg) + '</body>';
+      updateStudioEmpty();
+      setStudioStatus('error', 'Build failed');
       toast('Build failed');
+    } else {
+      setStudioStatus('', 'Idle');
     }
   } finally {
     S.studioBusy = false; $('#studioRun').textContent = 'Build'; $('#studioStop').style.display = 'none';
@@ -2797,9 +2856,13 @@ function setAuthMode(mode) {
 }
 $('#authToggle').addEventListener('click', e => { if (e.target.tagName === 'BUTTON') setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); });
 
-/* ---- Forgot password flow ---- */
+/* ---- Forgot password flow ----
+   #forgotOverlay lives INSIDE #auth in the DOM (no closing tag for #auth before it), so #auth
+   itself must stay visible the whole time — setting #auth's own display to 'none' hides this
+   overlay too (a hidden ancestor always collapses its children), which used to wipe out the
+   entire login screen and reveal the app underneath in its default guest state. Only toggle
+   the overlay itself; its own fixed position + z-index already puts it above the login card. */
 $('#forgotLink').onclick = () => {
-  document.getElementById('auth').style.display = 'none';
   const ov = document.getElementById('forgotOverlay');
   ov.style.display = 'grid';
   document.getElementById('forgotStep1').style.display = 'block';
@@ -2809,11 +2872,9 @@ $('#forgotLink').onclick = () => {
 };
 $('#forgotCancel').onclick = () => {
   document.getElementById('forgotOverlay').style.display = 'none';
-  document.getElementById('auth').style.display = 'grid';
 };
 $('#forgotBackBtn').onclick = () => {
   document.getElementById('forgotOverlay').style.display = 'none';
-  document.getElementById('auth').style.display = 'grid';
 };
 $('#forgotSendBtn').onclick = async () => {
   const email = document.getElementById('forgotEmail').value.trim();
