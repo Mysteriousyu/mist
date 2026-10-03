@@ -149,10 +149,13 @@ function blankData() {
          - codingChain: used for plain text / coding (up to 6 keys)
          - multimodalChain: used when the user sends media or a URL  */
       sonar: {
+        // claude-fable-5-1 is kept here as a fallback, not the primary — the agentic computer-use
+        // feature (Stellar) is the one place that always calls claude-fable-5-1 directly, hardcoded
+        // separately in the agent-brain code, regardless of whatever Sonar's chat chain is set to.
         codingChain: [
+          { provider: 'cometapi', model: 'gemini-4-argon' },
           { provider: 'cometapi', model: 'claude-fable-5-1' },
           { provider: 'cometapi', model: 'claude-opus-5' },
-          { provider: 'cometapi', model: 'claude-opus-4-6' },
           { provider: 'cerebras', model: 'gpt-oss-120b' },
           { provider: 'gemini', model: 'gemini-3.8-flash' },
           { provider: 'pollinations', model: 'openai' }
@@ -1344,7 +1347,15 @@ const AGENT_TOOL_CANDIDATES = [
   { type: 'computer_toolset_20260801', beta: null },
   { type: 'computer_20251124', beta: 'computer-use-2025-11-24' }
 ];
-let agentWorkingToolSchema = null; // cached once we find one that works, tried first next time
+// This is ONLY an ordering hint for a brand-new session's very first call (try whichever schema
+// most recently worked for anyone, to save a wasted request) — it must never be used to pick a
+// DIFFERENT schema partway through a session that already has tool_use blocks in its history.
+// Once a session's first call picks a schema, that session is locked to it on session.toolSchema
+// for every later step: Claude's response shape (plain computer tool vs toolset_name family) is
+// baked into every tool_use block already recorded, so switching schema mid-conversation always
+// fails with something like "toolset_name 'computer' is not the family of a declared toolset
+// entry" — Bedrock/Anthropic rejecting history that doesn't match the newly-declared tool type.
+let agentLastGlobalToolSchema = null;
 
 function computerToolFor(schema) {
   if (schema.type === 'computer_toolset_20260801') {
@@ -1362,13 +1373,16 @@ function computerToolFor(schema) {
   };
 }
 
-// Calls Claude's computer-use endpoint, trying each known tool-schema version until one is
-// accepted. Any error OTHER than "wrong tool version" (auth, quota, rate limit, etc.) fails
-// immediately instead of wasting two more calls retrying schemas that were never the problem.
-async function callAgentBrain(anthroUrl, anthroKey, msgs) {
-  const ordered = agentWorkingToolSchema
-    ? [agentWorkingToolSchema, ...AGENT_TOOL_CANDIDATES.filter(c => c.type !== agentWorkingToolSchema.type)]
-    : AGENT_TOOL_CANDIDATES;
+// Calls Claude's computer-use endpoint. `session` carries the per-session schema lock: once this
+// session's history contains a tool_use block, we must keep declaring that SAME schema forever —
+// trying a different one against existing history is what breaks (see note above). Only a session
+// with no locked schema yet (its very first call) is free to try multiple candidates.
+async function callAgentBrain(anthroUrl, anthroKey, msgs, session) {
+  const ordered = session.toolSchema
+    ? [session.toolSchema] // locked — this is the only schema this session's history is valid under
+    : (agentLastGlobalToolSchema
+        ? [agentLastGlobalToolSchema, ...AGENT_TOOL_CANDIDATES.filter(c => c.type !== agentLastGlobalToolSchema.type)]
+        : AGENT_TOOL_CANDIDATES);
 
   let lastErrText = '';
   for (const schema of ordered) {
@@ -1388,14 +1402,16 @@ async function callAgentBrain(anthroUrl, anthroKey, msgs) {
     }
 
     if (apiRes.ok) {
-      agentWorkingToolSchema = schema;
+      agentLastGlobalToolSchema = schema;
+      session.toolSchema = schema; // lock it in for the rest of this session's steps
       return { data: await apiRes.json() };
     }
 
     lastErrText = await apiRes.text().catch(() => '');
     // Any Bedrock ValidationException that mentions our tool entry means the schema shape or
     // version was wrong — worth trying the next candidate. Anything else (quota, auth, rate
-    // limit — none of which come back as ValidationException) is a real failure, so stop.
+    // limit — none of which come back as ValidationException) is a real failure, so stop. Once
+    // a session is locked (ordered.length === 1) there's nothing left to retry either way.
     if (!(/ValidationException/i.test(lastErrText) && /tool/i.test(lastErrText))) break;
   }
   return { error: 'Agent brain error: ' + lastErrText.slice(0, 300) };
@@ -1502,6 +1518,7 @@ async function handleAgentInit(req, res) {
   AGENT_SESSIONS[id] = {
     userId, task, status: 'running', step: 0, createdAt: nowMs(),
     hyperbeamId: hb.session_id,
+    toolSchema: null, // locked to whichever candidate succeeds on this session's first call
     messages: [{
       role: 'user',
       content: [{ type: 'text', text:
@@ -1566,7 +1583,7 @@ async function handleAgentStep(req, res) {
   const anthroKey = useCometFirst ? cometKey : anthropicKey;
   const anthroUrl = useCometFirst ? 'https://api.cometapi.com/v1/messages' : 'https://api.anthropic.com/v1/messages';
 
-  const result = await callAgentBrain(anthroUrl, anthroKey, msgs);
+  const result = await callAgentBrain(anthroUrl, anthroKey, msgs, session);
   if (result.error) {
     stopAgentSession(body.sessionId); // brain call failed outright — don't leave the VM running
     return send(res, 200, { type: 'error', message: result.error });
