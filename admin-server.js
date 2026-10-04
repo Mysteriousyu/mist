@@ -183,7 +183,12 @@ function blankData() {
         // existing default). Each effort chain is followed by codingChain as a safety net.
         effortChains: {
           low:    [{ provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free' }],
-          medium: [{ provider: 'openrouter', model: 'stealth/space-bunny-alpha' }]
+          // Space Bunny Alpha is a stealth model that can be pulled without notice. If it errors or
+          // disappears, the chain moves on to the free Qwen3.8 27B, then the default chain.
+          medium: [
+            { provider: 'openrouter', model: 'stealth/space-bunny-alpha' },
+            { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free' }
+          ]
         },
         fallbacks: []
       },
@@ -241,6 +246,13 @@ function reconcile(d) {
   const defSonar = blankData().routing.sonar;
   if (merged.routing && merged.routing.sonar && !merged.routing.sonar.effortChains) {
     merged.routing.sonar.effortChains = defSonar.effortChains;
+  }
+  // Already-saved Medium chain (from before Qwen was added): insert Qwen right after Space Bunny.
+  // Idempotent — does nothing if Qwen is already in the chain or Space Bunny isn't.
+  const med = merged.routing && merged.routing.sonar && merged.routing.sonar.effortChains && merged.routing.sonar.effortChains.medium;
+  if (Array.isArray(med) && !med.some(t => t.model === 'qwen/qwen3.8-27b:free')) {
+    const i = med.findIndex(t => t.model === 'stealth/space-bunny-alpha');
+    if (i > -1) med.splice(i + 1, 0, { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free' });
   }
   return merged;
 }
