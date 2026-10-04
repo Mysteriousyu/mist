@@ -178,6 +178,13 @@ function blankData() {
           { provider: 'gemini', model: 'gemini-3.6-flash' },
           { provider: 'openai', model: 'gpt-4o' }
         ],
+        // Thinking effort (chosen by the user in the chat UI). Only low and medium have their own
+        // models; high and ultra deliberately have no entry and use codingChain above (the
+        // existing default). Each effort chain is followed by codingChain as a safety net.
+        effortChains: {
+          low:    [{ provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free' }],
+          medium: [{ provider: 'openrouter', model: 'stealth/space-bunny-alpha' }]
+        },
         fallbacks: []
       },
       /* Mist 3 is a chat model that crafts prompts. The actual image generation
@@ -228,6 +235,12 @@ function reconcile(d) {
         }
       }
     }
+  }
+  // Same shallow-merge problem for Sonar's effort chains: saved routing predates them, so fill
+  // them in only when absent (never overwrites chains you've edited in the console).
+  const defSonar = blankData().routing.sonar;
+  if (merged.routing && merged.routing.sonar && !merged.routing.sonar.effortChains) {
+    merged.routing.sonar.effortChains = defSonar.effortChains;
   }
   return merged;
 }
@@ -568,16 +581,19 @@ function isCodingQuestion(messages) {
   return codeWords || codeSymbols;
 }
 
-function resolveTargets(assistant, messages) {
+function resolveTargets(assistant, messages, effort) {
   const route = DB.routing[assistant];
   if (!route) return [];
 
   let chain;
   if (assistant === 'sonar') {
     const useMultimodal = isMultimodal(messages || []);
+    const baseChain = route.codingChain || [{ provider: route.provider, model: route.model }];
+    // Effort only changes plain-text chats; media/URL messages always use the multimodal chain.
+    const effortChain = (!useMultimodal && route.effortChains && route.effortChains[effort]) || null;
     chain = useMultimodal
       ? (route.multimodalChain || [])
-      : (route.codingChain || [{ provider: route.provider, model: route.model }]);
+      : (effortChain && effortChain.length ? [...effortChain, ...baseChain] : baseChain);
     // append global fallbacks after chain
     chain = [...chain, ...(route.fallbacks || [])];
   } else if (assistant === 'pluto') {
@@ -682,12 +698,14 @@ async function handleChat(req, res) {
   
   // If web search requested, add Gemini (with Google Search) as first target
   const wantsWeb = body.webSearch === true;
+  // Sonar thinking effort: low | medium | high | ultra (anything else = default behaviour)
+  const effort = ['low', 'medium', 'high', 'ultra'].includes(body.effort) ? body.effort : 'high';
   let targets;
   if (wantsWeb && keyFor('gemini')) {
     const geminiCfg = Object.assign({}, DB.providers.gemini || {}, { apiKey: keyFor('gemini'), format: 'gemini' });
-    targets = [{ providerCfg: geminiCfg, model: 'gemini-3.6-flash' }, ...resolveTargets(assistant, messages)];
+    targets = [{ providerCfg: geminiCfg, model: 'gemini-3.6-flash' }, ...resolveTargets(assistant, messages, effort)];
   } else {
-    targets = resolveTargets(assistant, messages);
+    targets = resolveTargets(assistant, messages, effort);
   }
   if (!targets.length) return send(res, 503, { error: 'No API key configured for ' + assistant + '. Set one in the admin console → Keys & Models.' });
 

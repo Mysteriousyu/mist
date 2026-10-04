@@ -122,6 +122,9 @@ a:hover{text-decoration:underline}
 .switch button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .switch button.on[data-m="sonar"]{background:var(--grad);color:#fff}
 .switch button.on[data-m="omni"]{background:linear-gradient(135deg,#8B5CF6,#3A6DF0);color:#fff}
+.switch.effort{margin-left:8px}
+.switch.effort button{padding:4px 10px;font-size:12px}
+.switch.effort button.on{background:var(--grad);color:#fff}
 
 /* Views */
 .view{display:none;flex:1;min-height:0;flex-direction:column}
@@ -684,6 +687,12 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
         <button data-m="sonar">Sonar</button>
         <button data-m="omni">Omni</button>
       </div>
+      <div class="switch effort" id="effortSwitch" role="group" aria-label="Sonar thinking effort" title="Sonar thinking effort" style="display:none">
+        <button data-e="low">Low</button>
+        <button data-e="medium">Medium</button>
+        <button data-e="high" class="on">High</button>
+        <button data-e="ultra">Ultra</button>
+      </div>
       <button class="iconbtn" id="btnTheme" aria-label="Toggle theme" title="Toggle theme">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></svg>
       </button>
@@ -1094,7 +1103,7 @@ const DEFAULT_CONFIG = {
   syncMinutes: 15
 };
 const DEFAULT_SETTINGS = {
-  theme: 'dark', model: 'pluto', length: 'balanced', context: 24, name: ''
+  theme: 'dark', model: 'pluto', length: 'balanced', context: 24, name: '', effort: 'high'
 };
 /* Connectors: [id, name, desc, category, status]
    status: 'ready'   — has a real API, works today with credentials
@@ -1368,7 +1377,8 @@ async function streamChat({ assistant, messages, system, signal, onDelta, meta }
       headers: { 'content-type': 'application/json', 'x-mist-user': S.userId },
       body: JSON.stringify(Object.assign({
         assistant, model: S.config.models[assistant], messages, system, stream: true,
-        userId: S.userId, webSearch: S.activeTool === 'web'
+        userId: S.userId, webSearch: S.activeTool === 'web',
+        effort: assistant === 'sonar' ? (S.settings.effort || 'high') : undefined
       }, meta || {})),
       signal
     });
@@ -2027,6 +2037,9 @@ function render() {
   $('#topTitle').textContent = S.view === 'chat' ? (chat ? chat.title : 'New chat')
     : ({ projects: 'Projects', artifacts: 'Artifacts', studio: 'Mist Codespace', connectors: 'Connectors' })[S.view];
   $$('#switch button').forEach(b => b.classList.toggle('on', b.dataset.m === S.model));
+  // Thinking-effort selector: Sonar only
+  $('#effortSwitch').style.display = S.model === 'sonar' ? '' : 'none';
+  $$('#effortSwitch button').forEach(b => b.classList.toggle('on', b.dataset.e === (S.settings.effort || 'high')));
   $('#input').placeholder = S.model === 'omni'
     ? 'Describe an image or video for Omni…'
     : 'Ask ' + (S.model === 'sonar' ? 'Sonar' : 'Pluto') + ' anything…';
@@ -2126,6 +2139,11 @@ document.addEventListener('click', e => {
 
 $$('#switch button').forEach(b => b.onclick = () => {
   S.model = b.dataset.m; S.settings.model = S.model; save.settings(); render(); $('#input').focus();
+});
+
+$$('#effortSwitch button').forEach(b => b.onclick = () => {
+  S.settings.effort = b.dataset.e; save.settings(); render();
+  toast('Sonar thinking effort: ' + b.textContent);
 });
 
 /* composer */
@@ -2401,7 +2419,8 @@ async function voiceProcessResponse(userText) {
       body: JSON.stringify({
         assistant, messages: chat.messages.slice(-6),
         system: systemFor(assistant, chat), stream: false,
-        userId: S.userId
+        userId: S.userId,
+        effort: assistant === 'sonar' ? (S.settings.effort || 'high') : undefined
       })
     });
 
