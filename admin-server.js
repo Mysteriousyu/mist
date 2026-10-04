@@ -2030,6 +2030,14 @@ const server = http.createServer(async (req, res) => {
 (async () => {
   const { data, isFirstRun, source } = await loadDB();
   DB = data;
+  // Emergency recovery: if ADMIN_RESET_PASSWORD is set in the environment, force the
+  // admin password to that value on boot. Use this if you're ever locked out of /admin.
+  // IMPORTANT: remove this env var again after logging in — as long as it's set, it
+  // overwrites whatever password you set in the console on every single restart/deploy.
+  if (process.env.ADMIN_RESET_PASSWORD) {
+    setPass(process.env.ADMIN_RESET_PASSWORD);
+    console.log('  [admin] Password was force-reset via ADMIN_RESET_PASSWORD. Log in, then REMOVE that env var.');
+  }
   server.listen(PORT, () => {
     console.log('\n  Mist admin server running');
     console.log('  Console:  http://localhost:' + PORT + '/admin');
