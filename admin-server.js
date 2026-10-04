@@ -12,7 +12,12 @@
      • Stores everything in one JSON file you can back up, edit, or delete
 
    REQUIREMENTS
-     • Node.js 18 or newer. No npm install. No dependencies.
+     • Node.js 18 or newer.
+     • Optional: set REDIS_URL to a Redis/Render Key Value connection string so
+       settings survive redeploys on hosts with no persistent disk (e.g. Render's
+       free web service plan). Without it, data is still read/written to a local
+       JSON file, which is fine for local use but is WIPED on every Render deploy
+       because that disk is ephemeral.
 
    RUN
      ADMIN_PASSWORD=your-secret node admin-server.js
@@ -33,6 +38,15 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 8787;
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'mist-data.json');
 const FIRST_RUN_PASSWORD = process.env.ADMIN_PASSWORD || '0000';
+// Persistent store (Render Key Value / any Redis-compatible URL). Optional — if unset
+// or unreachable, Mist falls back to the local JSON file (fine locally, but that file
+// lives on an ephemeral disk on Render's free plan and is wiped on every deploy).
+const REDIS_URL = process.env.REDIS_URL || process.env.MIST_REDIS_URL || '';
+const REDIS_KEY = process.env.REDIS_DATA_KEY || 'mist:data';
+let createRedisClient = null;
+try { createRedisClient = require('redis').createClient; }
+catch { /* "redis" package not installed — persistence falls back to the local file */ }
+let redisClient = null;
 const SESSION_HOURS = 12;
 // Daily message cap per user (protects your API bill). 0 = unlimited.
 const MAX_MSGS_PER_DAY = Number(process.env.MAX_MSGS_PER_DAY || 100);
@@ -192,35 +206,60 @@ function blankData() {
   };
 }
 
-let DB = load();
+// DB starts as a placeholder and is replaced with the real loaded data by loadDB(),
+// awaited before the server starts listening (see the bottom of this file) — so no
+// request is ever handled against the placeholder.
+let DB = blankData();
 
-function load() {
-  try {
-    const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    const merged = Object.assign(blankData(), d);
-    // The saved file's `providers` block completely replaces the code defaults above (shallow
-    // Object.assign), which means a provider's saved `models` list — frozen the moment it was
-    // first written to disk — silently never picks up new model ids added to the code later
-    // (e.g. a newly-released model). Reconcile each saved provider's model list with the current
-    // code defaults, adding anything new while leaving the saved apiKey and everything else as-is.
-    if (merged.providers) {
-      const defaultProviders = blankData().providers;
-      for (const [id, defProv] of Object.entries(defaultProviders)) {
-        const saved = merged.providers[id];
-        if (saved && Array.isArray(saved.models) && Array.isArray(defProv.models)) {
-          for (const m of defProv.models) {
-            if (!saved.models.includes(m)) saved.models.push(m);
-          }
+// The saved file's `providers` block completely replaces the code defaults above (shallow
+// Object.assign), which means a provider's saved `models` list — frozen the moment it was
+// first written to disk — silently never picks up new model ids added to the code later
+// (e.g. a newly-released model). Reconcile each saved provider's model list with the current
+// code defaults, adding anything new while leaving the saved apiKey and everything else as-is.
+function reconcile(d) {
+  const merged = Object.assign(blankData(), d);
+  if (merged.providers) {
+    const defaultProviders = blankData().providers;
+    for (const [id, defProv] of Object.entries(defaultProviders)) {
+      const saved = merged.providers[id];
+      if (saved && Array.isArray(saved.models) && Array.isArray(defProv.models)) {
+        for (const m of defProv.models) {
+          if (!saved.models.includes(m)) saved.models.push(m);
         }
       }
     }
-    return merged;
+  }
+  return merged;
+}
+
+// Loads DB once at startup. Tries Redis/Render Key Value first (if REDIS_URL is set),
+// then the local JSON file, then falls back to a fresh install. Returns which source
+// was actually used so the startup log and the "first run" message are accurate.
+async function loadDB() {
+  if (REDIS_URL && createRedisClient) {
+    try {
+      redisClient = createRedisClient({ url: REDIS_URL });
+      redisClient.on('error', (e) => console.error('[redis] connection error:', e.message));
+      await redisClient.connect();
+      const raw = await redisClient.get(REDIS_KEY);
+      if (raw) return { data: reconcile(JSON.parse(raw)), isFirstRun: false, source: 'Render Key Value (redis)' };
+      console.log('  [redis] connected, but no saved data yet under key "' + REDIS_KEY + '" — checking local file');
+    } catch (e) {
+      console.error('  [redis] could not connect (' + e.message + ') — falling back to the local file');
+      redisClient = null;
+    }
+  } else if (REDIS_URL && !createRedisClient) {
+    console.error('  [redis] REDIS_URL is set, but the "redis" package is not installed — run npm install. Falling back to the local file.');
+  }
+  try {
+    const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    return { data: reconcile(d), isFirstRun: false, source: redisClient ? 'local file (will migrate to redis on next save)' : 'local file' };
   } catch {
     const fresh = blankData();
     const salt = crypto.randomBytes(16).toString('hex');
     fresh.settings.passSalt = salt;
     fresh.settings.passHash = hashPass(FIRST_RUN_PASSWORD, salt);
-    return fresh;
+    return { data: fresh, isFirstRun: true, source: redisClient ? 'redis (new)' : 'local file (new)' };
   }
 }
 
@@ -228,9 +267,19 @@ let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const tmp = DATA_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(DB, null, 2));
-    fs.renameSync(tmp, DATA_FILE);
+    const json = JSON.stringify(DB, null, 2);
+    // Always write the local file too — it's a free fallback/cache if Redis is unset,
+    // unreachable, or this is a local dev run.
+    try {
+      const tmp = DATA_FILE + '.tmp';
+      fs.writeFileSync(tmp, json);
+      fs.renameSync(tmp, DATA_FILE);
+    } catch (e) {
+      console.error('[save] local file write failed:', e.message);
+    }
+    if (redisClient && redisClient.isOpen) {
+      redisClient.set(REDIS_KEY, json).catch((e) => console.error('[redis] save failed:', e.message));
+    }
   }, 120);
 }
 
@@ -1978,14 +2027,18 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, { error: 'Not found' });
 });
 
-server.listen(PORT, () => {
-  console.log('\n  Mist admin server running');
-  console.log('  Console:  http://localhost:' + PORT + '/admin');
-  console.log('  Chat API: http://localhost:' + PORT + '/api/chat');
-  console.log('  Data:     ' + DATA_FILE);
-  if (!fs.existsSync(DATA_FILE)) { save(); console.log('  First run — admin password: ' + FIRST_RUN_PASSWORD + '  (change it in the console)'); }
-  console.log('');
-});
+(async () => {
+  const { data, isFirstRun, source } = await loadDB();
+  DB = data;
+  server.listen(PORT, () => {
+    console.log('\n  Mist admin server running');
+    console.log('  Console:  http://localhost:' + PORT + '/admin');
+    console.log('  Chat API: http://localhost:' + PORT + '/api/chat');
+    console.log('  Data:     ' + source + (redisClient ? '' : ' (' + DATA_FILE + ')'));
+    if (isFirstRun) { save(); console.log('  First run — admin password: ' + FIRST_RUN_PASSWORD + '  (change it in the console)'); }
+    console.log('');
+  });
+})();
 
 /* ------------------------------ admin console UI ------------------------------ */
 const ADMIN_HTML = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
