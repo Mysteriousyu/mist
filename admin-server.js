@@ -1140,6 +1140,57 @@ async function handleGenerate(req, res) {
   const geminiKey = keyFor('gemini');
   const cometKey = keyFor('cometapi');
 
+  // ==================== 0. Cloudflare Workers AI (FLUX.2 dev, then FLUX.1 schnell) ====================
+  // Needs CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_KEY (Render env vars). Free plan = 10,000 Neurons/day;
+  // once that's used up Cloudflare returns an error and we simply fall through to the providers below.
+  const cfAccount = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+  const cfKey = keyFor('cloudflare');
+  if (cfAccount && cfKey) {
+    const cfRun = (model) => 'https://api.cloudflare.com/client/v4/accounts/' + encodeURIComponent(cfAccount) + '/ai/run/' + model;
+    const cfImageFrom = async (r) => {
+      // Cloudflare's REST API wraps results as { result: { image }, success } — handle that, a bare { image }, or raw image bytes.
+      const ct = r.headers.get('content-type') || '';
+      if (ct.startsWith('image/')) {
+        return 'data:' + ct.split(';')[0] + ';base64,' + Buffer.from(await r.arrayBuffer()).toString('base64');
+      }
+      const j = await r.json();
+      const b64 = (j && j.result && j.result.image) || (j && j.image);
+      if (!b64) return null;
+      const mime = b64.startsWith('iVBOR') ? 'image/png' : b64.startsWith('UklGR') ? 'image/webp' : 'image/jpeg';
+      return 'data:' + mime + ';base64,' + b64;
+    };
+    // a) FLUX.2 [dev] — best quality. Takes multipart/form-data.
+    try {
+      const form = new FormData();
+      form.append('prompt', String(body.prompt).slice(0, 2000));
+      form.append('width', '1024');
+      form.append('height', '1024');
+      const r = await fetch(cfRun('@cf/black-forest-labs/flux-2-dev'), {
+        method: 'POST', headers: { authorization: 'Bearer ' + cfKey }, body: form,
+        signal: AbortSignal.timeout(30000)
+      });
+      if (r.ok) {
+        const img = await cfImageFrom(r);
+        if (img) return send(res, 200, { image: img, provider: 'cloudflare-flux-2-dev' });
+        console.error('Cloudflare flux-2-dev: response had no image');
+      } else { console.error('Cloudflare flux-2-dev error ' + r.status + ':', (await r.text().catch(() => '')).slice(0, 400)); }
+    } catch (e) { console.error('Cloudflare flux-2-dev failed:', e.message); }
+    // b) FLUX.1 [schnell] — faster/cheaper, plain JSON request.
+    try {
+      const r = await fetch(cfRun('@cf/black-forest-labs/flux-1-schnell'), {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + cfKey, 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: String(body.prompt).slice(0, 2000), steps: 6 }),
+        signal: AbortSignal.timeout(20000)
+      });
+      if (r.ok) {
+        const img = await cfImageFrom(r);
+        if (img) return send(res, 200, { image: img, provider: 'cloudflare-flux-1-schnell' });
+        console.error('Cloudflare flux-1-schnell: response had no image');
+      } else { console.error('Cloudflare flux-1-schnell error ' + r.status + ':', (await r.text().catch(() => '')).slice(0, 400)); }
+    } catch (e) { console.error('Cloudflare flux-1-schnell failed:', e.message); }
+  }
+
   // ==================== 1. Google Gemini "Nano Banana 2" (gemini-3.1-flash-image) ====================
   // Uses the SAME key already powering Gemini chat elsewhere — no new signup, no new env var.
   // Free tier: ~50-500 requests/day via Google AI Studio, no credit card, native 4K, no watermark.
