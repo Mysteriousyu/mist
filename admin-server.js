@@ -1248,6 +1248,21 @@ async function handlePhotos(req, res) {
     j => (j.photos || []).map(p => ({ url: p.src && (p.src.large || p.src.medium), alt: p.alt || q, author: p.photographer || 'Unknown', authorUrl: p.photographer_url || '', source: 'Pexels', link: p.url || 'https://www.pexels.com' })));
   if (!photos && pixabay) photos = await tryGet('pixabay', 'https://pixabay.com/api/?image_type=photo&per_page=3&safesearch=true&q=' + enc + '&key=' + encodeURIComponent(pixabay), {},
     j => (j.hits || []).map(p => ({ url: p.webformatURL, alt: p.tags || q, author: p.user || 'Unknown', authorUrl: p.user ? 'https://pixabay.com/users/' + encodeURIComponent(p.user) + '-' + p.user_id + '/' : '', source: 'Pixabay', link: p.pageURL || 'https://pixabay.com' })));
+  // Pixabay forbids hotlinking: download each image server-side and hand it to the browser inline.
+  if (photos && photos[0] && photos[0].source === 'Pixabay') {
+    const inlined = [];
+    for (const p of photos) {
+      try {
+        const ir = await fetch(p.url, { signal: AbortSignal.timeout(10000) });
+        const ct = ir.headers.get('content-type') || 'image/jpeg';
+        if (!ir.ok || !ct.startsWith('image/')) continue;
+        const buf = Buffer.from(await ir.arrayBuffer());
+        if (buf.length > 4 * 1024 * 1024) continue;
+        inlined.push(Object.assign({}, p, { url: 'data:' + ct.split(';')[0] + ';base64,' + buf.toString('base64') }));
+      } catch (e) { console.error('Pixabay image download failed:', e.message); }
+    }
+    photos = inlined.length ? inlined : null;
+  }
   if (!photos) return send(res, 404, { error: 'No photo library configured or nothing matched.' });
   return send(res, 200, { query: q, photos });
 }
