@@ -122,9 +122,35 @@ a:hover{text-decoration:underline}
 .switch button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .switch button.on[data-m="sonar"]{background:var(--grad);color:#fff}
 .switch button.on[data-m="omni"]{background:linear-gradient(135deg,#8B5CF6,#3A6DF0);color:#fff}
-.switch.effort{margin-left:8px}
-.switch.effort button{padding:4px 10px;font-size:12px}
-.switch.effort button.on{background:var(--grad);color:#fff}
+/* Sonar thinking-effort picker (composer popover) */
+.think{position:relative;display:inline-flex}
+.think-btn .chev{width:12px;height:12px;transition:transform .15s ease}
+.think-btn[aria-expanded="true"]{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
+.think-btn[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.think-menu{position:absolute;bottom:calc(100% + 8px);left:0;z-index:30;min-width:250px;padding:6px;background:var(--surface);
+  border:1px solid var(--border-strong);border-radius:var(--r);box-shadow:0 12px 32px rgba(0,0,0,.22)}
+.think-menu[hidden]{display:none}
+.think-menu button{display:flex;align-items:center;gap:12px;width:100%;padding:9px 10px;border-radius:var(--r-sm);text-align:left;color:var(--text)}
+.think-menu button:hover,.think-menu button:focus-visible{background:var(--surface-2)}
+.think-menu button[aria-checked="true"]{background:var(--brand-soft)}
+.think-menu .tx{display:flex;flex-direction:column;gap:1px}
+.think-menu .tx b{font-size:13px}
+.think-menu .tx small{font-size:11.5px;color:var(--muted)}
+.think-menu .bars{display:flex;align-items:flex-end;gap:2px;height:16px;flex:none}
+.think-menu .bars i{width:4px;border-radius:2px;background:var(--border-strong)}
+.think-menu .bars i:nth-child(1){height:5px}.think-menu .bars i:nth-child(2){height:8px}
+.think-menu .bars i:nth-child(3){height:12px}.think-menu .bars i:nth-child(4){height:16px}
+.think-menu button[aria-checked="true"] .bars i{background:var(--brand)}
+.think-menu .bars[data-n="1"] i:nth-child(n+2),.think-menu .bars[data-n="2"] i:nth-child(n+3),.think-menu .bars[data-n="3"] i:nth-child(n+4){opacity:.25}
+@media(max-width:600px){.think-menu{min-width:220px}}
+
+/* Research sources under an answer */
+.sources{margin:10px 0 2px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface-2)}
+.sources-h{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.sources ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:3px;font-size:13px}
+.sources a{color:var(--text);text-decoration:none;display:inline-flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.sources a:hover .src-t{color:var(--brand);text-decoration:underline}
+.sources .src-h{font-size:11.5px;color:var(--muted)}
 
 /* Views */
 .view{display:none;flex:1;min-height:0;flex-direction:column}
@@ -687,12 +713,6 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
         <button data-m="sonar">Sonar</button>
         <button data-m="omni">Omni</button>
       </div>
-      <div class="switch effort" id="effortSwitch" role="group" aria-label="Sonar thinking effort" title="Sonar thinking effort" style="display:none">
-        <button data-e="low">Low</button>
-        <button data-e="medium">Medium</button>
-        <button data-e="high" class="on">High</button>
-        <button data-e="ultra">Ultra</button>
-      </div>
       <button class="iconbtn" id="btnTheme" aria-label="Toggle theme" title="Toggle theme">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></svg>
       </button>
@@ -738,6 +758,19 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
               Run code
             </button>
+            <div class="think" id="thinkWrap" style="display:none">
+              <button type="button" class="tool-pill think-btn" id="thinkBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="thinkMenu" title="How hard Sonar thinks">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
+                <span>Thinking: <b id="thinkLabel">High</b></span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="think-menu" id="thinkMenu" role="menu" aria-label="Thinking effort" hidden>
+                <button type="button" role="menuitemradio" data-e="low"><span class="bars" data-n="1"><i></i><i></i><i></i><i></i></span><span class="tx"><b>Low</b><small>Instant answers, lightest model</small></span></button>
+                <button type="button" role="menuitemradio" data-e="medium"><span class="bars" data-n="2"><i></i><i></i><i></i><i></i></span><span class="tx"><b>Medium</b><small>Balanced speed and reasoning</small></span></button>
+                <button type="button" role="menuitemradio" data-e="high"><span class="bars" data-n="3"><i></i><i></i><i></i><i></i></span><span class="tx"><b>High</b><small>Deep reasoning, best quality</small></span></button>
+                <button type="button" role="menuitemradio" data-e="ultra"><span class="bars" data-n="4"><i></i><i></i><i></i><i></i></span><span class="tx"><b>Ultra</b><small>Maximum effort, slowest</small></span></button>
+              </div>
+            </div>
             <button class="send" id="btnSend" disabled aria-label="Send message">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
             </button>
@@ -1368,7 +1401,7 @@ function systemFor(assistant, chat) {
 }
 
 /** Streams from the server route. onDelta(text) is called per chunk. */
-async function streamChat({ assistant, messages, system, signal, onDelta, meta }) {
+async function streamChat({ assistant, messages, system, signal, onDelta, onSources, meta }) {
   const url = S.config.endpoint || '/api/chat';
   let res;
   try {
@@ -1413,6 +1446,7 @@ async function streamChat({ assistant, messages, system, signal, onDelta, meta }
         if (!data || data === '[DONE]') continue;
         try {
           const j = JSON.parse(data);
+          if (Array.isArray(j.sources)) { if (onSources) onSources(j.sources); continue; }
           const piece =
             j.delta?.text ?? j.delta ??
             j.choices?.[0]?.delta?.content ??
@@ -1565,6 +1599,20 @@ async function runAgentic(chat, task) {
   save.chats();
 }
 
+/* What does an Omni message want? 'photo' (find a real photo), 'video', 'image' (generate), or 'chat' (plain text). */
+function omniIntent(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (S.activeTool === 'image') return 'image';
+  if (/\b(video|animate|animation|short film|motion clip)\b/.test(t) && /\b(make|create|generate|produce|render|animate|turn)\b/.test(t)) return 'video';
+  if (/\b(generate|draw|paint|illustrate|imagine|sketch|design)\b/.test(t) ||
+      /\b(make|create|render)\b.*\b(image|picture|logo|poster|wallpaper|illustration|artwork|icon|art)\b/.test(t)) return 'image';
+  if (/\b(photo|photos|picture|pictures|pic|pics|image|images)\b/.test(t) &&
+      (/\b(find|show|get|search|send|look(ing)? for|need|want|real|stock|pinterest|getty)\b/.test(t) || /\b(photo|picture|image)s? of\b/.test(t))) return 'photo';
+  // Clearly conversational / instruction text → answer in words, don't draw anything.
+  if (/\?\s*$/.test(t) || /^(reply|respond|answer|explain|what|why|how|who|when|where|write|tell|summari[sz]e|translate|list|describe|say|can you|could you|do you|is |are |brainstorm|help)\b/.test(t) || /reply with|exactly:/.test(t)) return 'chat';
+  return 'image'; // a bare scene description like "a red dragon at sunset" still draws it
+}
+
 async function run(chat) {
   const assistant = S.model;
   const msg = { id: uid(), role: 'assistant', content: '', model: assistant, pending: true, ts: now() };
@@ -1572,31 +1620,61 @@ async function run(chat) {
   S.streaming = true; S.controller = new AbortController();
   renderMessages(); updateSend(); scrollDown();
 
-  // MIST 3: image/video generation via /api/generate
-  if (assistant === 'omni') {
-    const lastUser = [...chat.messages].reverse().find(m => m.role === 'user');
-    const prompt = lastUser ? lastUser.content : '';
+  // Omni: decide what the user actually wants — a found photo, a generated image, a video, or just text.
+  const lastUserMsg = [...chat.messages].reverse().find(m => m.role === 'user');
+  const lastText = lastUserMsg ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : (lastUserMsg.content.find && (lastUserMsg.content.find(p => p.type === 'text') || {}).text) || '') : '';
+  const intent = assistant === 'omni' ? omniIntent(lastText) : 'chat';
+  if (assistant === 'omni' && intent !== 'chat') {
+    const prompt = lastText;
     const base = (S.config.endpoint || '/api/chat').replace(/\/chat$/, '');
-    try {
-      const r = await fetch(base + '/generate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-mist-user': S.userId },
-        body: JSON.stringify({ prompt, userId: S.userId }),
-        signal: S.controller.signal
-      });
+    const hdr = { 'content-type': 'application/json', 'x-mist-user': S.userId };
+    const sig = S.controller.signal;
+    const generateImage = async (note) => {
+      const r = await fetch(base + '/generate', { method: 'POST', headers: hdr, body: JSON.stringify({ prompt, userId: S.userId }), signal: sig });
       const j = await r.json();
-      msg.pending = false;
       if (!r.ok) {
         msg.content = '**Image generation failed.**\n\n' + (j.error || 'Unknown error') +
-          '\n\n*Check the CometAPI key in the admin console, or wait a moment — Pollinations (free, no key) should catch it as a fallback.*';
+          '\n\n*Check the image provider keys in the admin console, or wait a moment — Pollinations (free, no key) should catch it as a fallback.*';
       } else if (j.image) {
-        msg.content = '![generated image](' + j.image + ')\n\n*Generated with ' + (j.provider || 'model') + '.*';
+        msg.content = (note ? note + '\n\n' : '') + '![generated image](' + j.image + ')\n\n*Generated with ' + (j.provider || 'model') + '.*';
+      } else msg.content = '_No image returned._';
+    };
+    try {
+      if (intent === 'photo') {
+        const r = await fetch(base + '/photos', { method: 'POST', headers: hdr, body: JSON.stringify({ query: prompt }), signal: sig });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.photos && j.photos.length) {
+          msg.content = 'Here ' + (j.photos.length === 1 ? 'is a photo' : 'are some photos') + ' for “' + (j.query || prompt) + '”:\n\n' +
+            j.photos.map(p => '![' + (p.alt || 'photo').replace(/[\[\]]/g, '') + '](' + p.url + ')\n\n*Photo by ' + (p.authorUrl ? '[' + p.author + '](' + p.authorUrl + ')' : p.author) + ' on [' + p.source + '](' + p.link + ')*').join('\n\n');
+        } else {
+          await generateImage('_No photo library is connected (or nothing matched), so I generated one instead._');
+        }
+      } else if (intent === 'video') {
+        const r = await fetch(base + '/video', { method: 'POST', headers: hdr, body: JSON.stringify({ prompt }), signal: sig });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.id) {
+          msg.content = '**Video generation is not available.**\n\n' + (j.error || 'No video provider is configured.');
+        } else {
+          msg.content = '_Rendering your video — this usually takes under a minute…_'; msg.pending = false; render();
+          let done = false;
+          for (let i = 0; i < 60 && !done; i++) {
+            await new Promise(res => setTimeout(res, 3000));
+            if (sig.aborted) throw new DOMException('Aborted', 'AbortError');
+            const pr = await fetch(base + '/video?id=' + encodeURIComponent(j.id), { headers: hdr, signal: sig });
+            const pj = await pr.json().catch(() => ({}));
+            if (pj.status === 'completed' && pj.url) { msg.video = pj.url; msg.content = '*Generated with ' + (pj.provider || 'LTX') + '.*'; done = true; }
+            else if (pj.status === 'failed' || !pr.ok) { msg.content = '**Video generation failed.**\n\n' + (pj.error || 'The provider reported an error.'); done = true; }
+          }
+          if (!done) msg.content = '**Video is taking too long.** Try a shorter prompt.';
+        }
       } else {
-        msg.content = '_No image returned._';
+        await generateImage();
       }
+      msg.pending = false;
     } catch (e) {
       msg.pending = false;
       if (e.name !== 'AbortError') msg.content = 'Request failed: ' + e.message;
+      else if (!msg.content) chat.messages = chat.messages.filter(m => m.id !== msg.id);
     } finally {
       S.streaming = false; S.controller = null;
       chat.updatedAt = now(); save.chats();
@@ -1612,6 +1690,7 @@ async function run(chat) {
       system: systemFor(assistant, chat),
       meta: { chatId: chat.id, title: chat.title },
       signal: S.controller.signal,
+      onSources: s => { msg.sources = s; },
       onDelta: t => {
         msg.content += t;
         const el = document.getElementById('body-' + msg.id);
@@ -1779,6 +1858,13 @@ function messageHTML(m, chat, isLast) {
   const body = m.pending && !m.content
     ? '<div class="typing"><i></i><i></i><i></i></div>'
     : md(m.content);
+  const srcList = (!m.pending && Array.isArray(m.sources) && m.sources.length)
+    ? '<div class="sources"><div class="sources-h">Sources</div><ol>' +
+      m.sources.slice(0, 8).map(s => {
+        let host = ''; try { host = new URL(s.url).hostname.replace(/^www\./, ''); } catch {}
+        return '<li><a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer"><span class="src-t">' + esc(s.title || host || s.url) + '</span>' +
+          (host && host !== s.title ? '<span class="src-h">' + esc(host) + '</span>' : '') + '</a></li>';
+      }).join('') + '</ol></div>' : '';
   const feedbackBtns = m.pending ? '' :
     '<span style="margin-left:auto;display:flex;gap:2px">' +
     '<button class="act" data-vote="up" data-msg="' + m.id + '" title="Good response"' + (m.vote === 'up' ? ' style="color:var(--ok)"' : '') + '>👍</button>' +
@@ -1795,7 +1881,7 @@ function messageHTML(m, chat, isLast) {
 
   return '<div class="msg assistant" data-id="' + m.id + '">' +
     '<div class="who"><span class="avatar ' + cls + '"></span>' + label + '</div>' +
-    '<div class="md" id="body-' + m.id + '">' + body + '</div>' + acts + '</div>';
+    '<div class="md" id="body-' + m.id + '">' + (m.video ? '<video controls playsinline src="' + esc(m.video) + '" style="max-width:100%;border-radius:12px"></video>' : '') + body + '</div>' + srcList + acts + '</div>';
 }
 
 function renderMessages() {
@@ -2038,8 +2124,11 @@ function render() {
     : ({ projects: 'Projects', artifacts: 'Artifacts', studio: 'Mist Codespace', connectors: 'Connectors' })[S.view];
   $$('#switch button').forEach(b => b.classList.toggle('on', b.dataset.m === S.model));
   // Thinking-effort selector: Sonar only
-  $('#effortSwitch').style.display = S.model === 'sonar' ? '' : 'none';
-  $$('#effortSwitch button').forEach(b => b.classList.toggle('on', b.dataset.e === (S.settings.effort || 'high')));
+  $('#thinkWrap').style.display = S.model === 'sonar' ? '' : 'none';
+  const effNow = S.settings.effort || 'high';
+  $('#thinkLabel').textContent = effNow.charAt(0).toUpperCase() + effNow.slice(1);
+  $$('#thinkMenu button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.e === effNow)));
+  if (S.model !== 'sonar') { $('#thinkMenu').hidden = true; $('#thinkBtn').setAttribute('aria-expanded', 'false'); }
   $('#input').placeholder = S.model === 'omni'
     ? 'Describe an image or video for Omni…'
     : 'Ask ' + (S.model === 'sonar' ? 'Sonar' : 'Pluto') + ' anything…';
@@ -2141,10 +2230,22 @@ $$('#switch button').forEach(b => b.onclick = () => {
   S.model = b.dataset.m; S.settings.model = S.model; save.settings(); render(); $('#input').focus();
 });
 
-$$('#effortSwitch button').forEach(b => b.onclick = () => {
-  S.settings.effort = b.dataset.e; save.settings(); render();
-  toast('Sonar thinking effort: ' + b.textContent);
-});
+(function () {
+  const btn = $('#thinkBtn'), menu = $('#thinkMenu');
+  const setOpen = o => { menu.hidden = !o; btn.setAttribute('aria-expanded', String(o)); if (o) { const cur = menu.querySelector('[aria-checked="true"]') || menu.querySelector('button'); cur && cur.focus(); } };
+  btn.onclick = e => { e.stopPropagation(); setOpen(menu.hidden); };
+  menu.querySelectorAll('button').forEach(b => b.onclick = () => {
+    S.settings.effort = b.dataset.e; save.settings(); setOpen(false); render(); btn.focus();
+    toast('Sonar thinking: ' + b.querySelector('b').textContent);
+  });
+  menu.addEventListener('keydown', e => {
+    const items = [...menu.querySelectorAll('button')], i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); btn.focus(); }
+  });
+  document.addEventListener('click', e => { if (!menu.hidden && !e.target.closest('#thinkWrap')) setOpen(false); });
+})();
 
 /* composer */
 const input = $('#input');
@@ -2757,6 +2858,19 @@ async function fetchRepoContext(repoInput) {
   } catch { return ''; }
 }
 
+/* Models sometimes wrap the page in prose + Markdown fences. Keep only the HTML document itself. */
+function extractHtmlDoc(raw) {
+  let t = String(raw || '');
+  const fence = t.match(/```(?:html)?\s*\n([\s\S]*?)```/i);
+  if (fence) t = fence[1];
+  else t = t.replace(/^\s*```[\w]*\s*\n?/, '').replace(/```\s*$/, '');
+  const s = t.search(/<!doctype html|<html[\s>]/i);
+  if (s > 0) t = t.slice(s);
+  const e = t.toLowerCase().lastIndexOf('</html>');
+  if (e > -1) t = t.slice(0, e + 7);
+  return t.trim();
+}
+
 async function studioBuild() {
   const prompt = $('#studioPrompt').value.trim();
   if (!prompt || S.studioBusy) return;
@@ -2774,7 +2888,7 @@ async function studioBuild() {
     codeEl.value += t;
     updateStudioEmpty();
     clearTimeout(studioBuild.t);
-    studioBuild.t = setTimeout(() => { $('#studioPreview').srcdoc = codeEl.value; }, 220);
+    studioBuild.t = setTimeout(() => { $('#studioPreview').srcdoc = extractHtmlDoc(codeEl.value); }, 220);
   };
 
   try {
@@ -2793,7 +2907,7 @@ async function studioBuild() {
         messages: [{ role: 'user', content: finalPrompt }], signal: ctrl.signal, onDelta
       });
     }
-    codeEl.value = codeEl.value.replace(/^\s*```[\w]*\s*\n?/, '').replace(/```\s*$/, '');
+    codeEl.value = extractHtmlDoc(codeEl.value);
     $('#studioPreview').srcdoc = codeEl.value;
     updateStudioEmpty();
     setStudioStatus('ready', 'Ready');
@@ -2823,6 +2937,33 @@ $('#studioSave').onclick = () => {
   S.artifacts.unshift({ id: uid(), title: ($('#studioPrompt').value.trim().slice(0, 40) || 'Codespace build'), type: 'html', code, chatId: null, ts: now() });
   save.artifacts(); toast('Saved to artifacts');
 };
+
+/* ------------------------------ modal accessibility ------------------------------ */
+// Every .modal becomes a real named dialog: role/aria-modal/aria-labelledby, focus moves in on open,
+// Tab is kept inside, and focus returns to whatever opened it when it closes.
+(function () {
+  $$('.modal').forEach(m => {
+    const sheet = m.querySelector('.sheet'); if (!sheet) return;
+    sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true');
+    const h = sheet.querySelector('h3, h2'); if (h) { if (!h.id) h.id = m.id + '-title'; sheet.setAttribute('aria-labelledby', h.id); }
+    let opener = null;
+    new MutationObserver(() => {
+      if (m.classList.contains('on')) {
+        opener = document.activeElement;
+        const first = sheet.querySelector('input:not([type=hidden]),textarea,select,button:not([data-close])') || sheet.querySelector('button');
+        setTimeout(() => first && first.focus(), 30);
+      } else if (opener && opener.focus) { try { opener.focus(); } catch {} opener = null; }
+    }).observe(m, { attributes: true, attributeFilter: ['class'] });
+    m.addEventListener('keydown', e => {
+      if (e.key !== 'Tab') return;
+      const f = [...sheet.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),textarea,select,[tabindex]:not([tabindex="-1"])')].filter(x => x.offsetParent !== null);
+      if (!f.length) return;
+      const a = f[0], z = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+      else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    });
+  });
+})();
 
 /* ------------------------------ shortcuts ------------------------------ */
 document.addEventListener('keydown', e => {

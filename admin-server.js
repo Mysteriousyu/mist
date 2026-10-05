@@ -137,13 +137,20 @@ function blankData() {
       fal:        { label: 'Fal.ai (⚡ FAST images)', format: 'openai', baseUrl: 'https://queue.fal.run/fal-ai/fast-sdxl', apiKey: '' },
       replicate:  { label: 'Replicate (images/video)', format: 'replicate', baseUrl: 'https://api.replicate.com/v1/predictions', apiKey: '' },
       /* Free fallback — no API key needed */
-      pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/v1/chat/completions', apiKey: 'dummy', models: ['openai', 'mistral', 'llama'] }
+      pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/v1/chat/completions', apiKey: 'dummy', models: ['openai', 'mistral', 'llama'] },
+      // Cloudflare AI Gateway (Unified Billing) — frontier models billed through Cloudflare credits.
+      // Only active when CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_GATEWAY_ID (+ a token) are set; the URL is built at request time.
+      cfgateway:  { label: 'Cloudflare AI Gateway (Grok / Gemini)', format: 'openai', baseUrl: '', apiKey: '',
+                    models: ['grok/grok-4.7', 'google-ai-studio/gemini-3.8-flash'] },
+      bluesminds: { label: 'Bluesminds', format: 'openai', baseUrl: 'https://api.bluesminds.com/v1/chat/completions', apiKey: '',
+                    models: ['moonshotai/kimi-k3', 'nvidia/nemotron-3-ultra-550b-a55b', 'openai/gpt-oss-20b'] }
     },
     routing: {
       /* Pluto splits by question type: coding questions get DeepSeek (NIM),
          everyday/simple questions get Groq (fastest, best for quick chat). */
       pluto: {
         casualChain: [
+          { provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' },
           { provider: 'groq', model: 'openai/gpt-oss-20b' },
           { provider: 'groq', model: 'openai/gpt-oss-120b' },
           { provider: 'cerebras', model: 'gpt-oss-120b' },
@@ -151,6 +158,7 @@ function blankData() {
           { provider: 'pollinations', model: 'openai' }
         ],
         codingChain: [
+          { provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' },
           { provider: 'nim2', model: 'nvidia/nemotron-3.5-lightning-30b-a3b' },
           { provider: 'groq', model: 'openai/gpt-oss-120b' },
           { provider: 'cerebras', model: 'gpt-oss-120b' },
@@ -167,6 +175,8 @@ function blankData() {
         // feature (Stellar) is the one place that always calls claude-fable-5-1 directly, hardcoded
         // separately in the agent-brain code, regardless of whatever Sonar's chat chain is set to.
         codingChain: [
+          { provider: 'cfgateway', model: 'grok/grok-4.7' },
+          { provider: 'bluesminds', model: 'moonshotai/kimi-k3' },
           { provider: 'cometapi', model: 'gemini-4-argon' },
           { provider: 'cometapi', model: 'claude-fable-5-1' },
           { provider: 'cometapi', model: 'claude-opus-5' },
@@ -233,6 +243,8 @@ function reconcile(d) {
   if (merged.providers) {
     const defaultProviders = blankData().providers;
     for (const [id, defProv] of Object.entries(defaultProviders)) {
+      // Brand-new providers added in code (e.g. cfgateway, bluesminds) appear in old saved data too.
+      if (!merged.providers[id]) merged.providers[id] = defProv;
       const saved = merged.providers[id];
       if (saved && Array.isArray(saved.models) && Array.isArray(defProv.models)) {
         for (const m of defProv.models) {
@@ -253,6 +265,22 @@ function reconcile(d) {
   if (Array.isArray(med) && !med.some(t => t.model === 'qwen/qwen3.8-27b:free')) {
     const i = med.findIndex(t => t.model === 'stealth/space-bunny-alpha');
     if (i > -1) med.splice(i + 1, 0, { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free' });
+  }
+  // One-time insertion of the Cloudflare-gateway and Bluesminds models at the top of the saved chains.
+  // Idempotent: skipped when the provider is already present in that chain (so edits in the console stick).
+  const addTop = (chain, entries) => {
+    if (!Array.isArray(chain)) return;
+    const toAdd = entries.filter(e => !chain.some(t => t.provider === e.provider));
+    chain.unshift(...toAdd);
+  };
+  const r = merged.routing || {};
+  if (r.sonar) addTop(r.sonar.codingChain, [
+    { provider: 'cfgateway', model: 'grok/grok-4.7' },
+    { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
+  ]);
+  if (r.pluto) {
+    addTop(r.pluto.casualChain, [{ provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' }]);
+    addTop(r.pluto.codingChain, [{ provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' }]);
   }
   return merged;
 }
@@ -455,13 +483,28 @@ function buildUpstream(providerCfg, model, system, messages) {
     url: providerCfg.baseUrl || 'https://integrate.api.nvidia.com/v1/chat/completions',
     init: {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
+      headers: Object.assign({ 'content-type': 'application/json', 'authorization': 'Bearer ' + key }, providerCfg.extraHeaders || {}),
       body: JSON.stringify({
         model, stream: true, max_tokens: 8192,
         messages: [{ role: 'system', content: system }, ...messages.map(m => ({ role: m.role, content: normalizeContent('openai', m.content) }))]
       })
     }
   };
+}
+
+/* Pull research sources out of a streamed chunk: Gemini Google-Search grounding, or Perplexity-style citations. */
+function extractSources(fmt, json) {
+  try {
+    const j = JSON.parse(json);
+    const out = [];
+    if (fmt === 'gemini') {
+      const chunks = j.candidates && j.candidates[0] && j.candidates[0].groundingMetadata && j.candidates[0].groundingMetadata.groundingChunks;
+      (chunks || []).forEach(c => { if (c.web && c.web.uri) out.push({ url: c.web.uri, title: c.web.title || '' }); });
+    } else if (Array.isArray(j.citations)) {
+      j.citations.forEach(c => { if (typeof c === 'string') out.push({ url: c, title: '' }); else if (c && c.url) out.push({ url: c.url, title: c.title || '' }); });
+    }
+    return out;
+  } catch { return []; }
 }
 
 function extractDelta(fmt, json) {
@@ -624,10 +667,25 @@ function resolveTargets(assistant, messages, effort) {
   }
 
   return chain
-    .slice(0, 6) // hard cap at 6
+    .slice(0, 9) // hard cap
     .map(t => {
       const p = DB.providers[t.provider];
       if (!p) return null;
+      // Cloudflare AI Gateway: needs account + gateway ids; reuses the Cloudflare token if no dedicated key.
+      if (t.provider === 'cfgateway') {
+        const acct = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+        const gw = (process.env.CLOUDFLARE_GATEWAY_ID || '').trim();
+        const k = keyFor('cfgateway') || keyFor('cloudflare');
+        if (!acct || !gw || !k) return null;
+        return {
+          providerCfg: Object.assign({}, p, {
+            apiKey: k,
+            baseUrl: 'https://gateway.ai.cloudflare.com/v1/' + encodeURIComponent(acct) + '/' + encodeURIComponent(gw) + '/compat/chat/completions',
+            extraHeaders: { 'cf-aig-authorization': 'Bearer ' + k }
+          }),
+          model: t.model
+        };
+      }
       const key = keyFor(t.provider);
       if (!key) return null;
       // clone provider with the resolved key so buildUpstream uses it
@@ -709,13 +767,22 @@ async function handleChat(req, res) {
   messages = await resolveLinkedMedia(messages);
   
   // If web search requested, add Gemini (with Google Search) as first target
-  const wantsWeb = body.webSearch === true;
+  // Pluto and Sonar research automatically when the question is about current events/prices/etc.,
+  // or when the user turned on "Search web". Research runs on Google-Search-grounded Gemini 3.8 Flash
+  // (direct Google key) because that is what returns real source links.
+  const lastTxt = (() => { const l = messages[messages.length - 1]; return (l && typeof l.content === 'string') ? l.content.toLowerCase() : ''; })();
+  const looksLikeResearch = /\b(latest|news|today|tonight|right now|currently|current (price|status|version|ceo|president|champion)|who (is|are) the (current|new)|price of|stock price|weather|score|release date|this (week|month|year)|research|look up|search (for|the web)|find out|sources?)\b/.test(lastTxt);
+  const wantsWeb = body.webSearch === true || ((assistant === 'pluto' || assistant === 'sonar') && looksLikeResearch && !isMultimodal(messages));
   // Sonar thinking effort: low | medium | high | ultra (anything else = default behaviour)
   const effort = ['low', 'medium', 'high', 'ultra'].includes(body.effort) ? body.effort : 'high';
   let targets;
   if (wantsWeb && keyFor('gemini')) {
     const geminiCfg = Object.assign({}, DB.providers.gemini || {}, { apiKey: keyFor('gemini'), format: 'gemini' });
-    targets = [{ providerCfg: geminiCfg, model: 'gemini-3.6-flash' }, ...resolveTargets(assistant, messages, effort)];
+    targets = [
+      { providerCfg: geminiCfg, model: 'gemini-3.8-flash' },
+      { providerCfg: geminiCfg, model: 'gemini-3.6-flash' },
+      ...resolveTargets(assistant, messages, effort)
+    ];
   } else {
     targets = resolveTargets(assistant, messages, effort);
   }
@@ -795,10 +862,14 @@ async function handleChat(req, res) {
     }
 
     // stream + normalize + accumulate for logging
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'x-model-used': model });
+    // Headers are sent lazily, on the first real text, so a provider that answers 200 but streams
+    // nothing (the "empty response" symptom) can quietly fall through to the next model instead.
+    let started = false;
+    const startStream = () => { if (!started) { started = true; res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'x-model-used': model }); } };
     const reader = upstream.body.getReader();
     const dec = new TextDecoder();
     let buf = '', full = '';
+    const sources = [];
     try {
       while (true) {
         const { value, done } = await reader.read();
@@ -810,15 +881,25 @@ async function handleChat(req, res) {
             if (!line.startsWith('data:')) continue;
             const data = line.slice(5).trim();
             if (!data || data === '[DONE]') continue;
+            for (const s of extractSources(providerCfg.format, data)) {
+              if (!sources.some(x => x.url === s.url)) sources.push(s);
+            }
             const piece = extractDelta(providerCfg.format, data);
             if (piece) {
               full += piece;
+              startStream();
               res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: piece } }] }) + '\n\n');
             }
           }
         }
       }
     } catch { /* client likely disconnected */ }
+    if (!full && !started && i < targets.length - 1) {
+      console.error('Provider ' + (providerCfg.label || 'unknown') + ' (' + model + ') returned an empty stream — trying next');
+      continue;
+    }
+    startStream();
+    if (sources.length && full) res.write('data: ' + JSON.stringify({ sources: sources.slice(0, 8) }) + '\n\n');
     res.write('data: [DONE]\n\n');
     res.end();
     recordChat(userId, meta, messages, full);
@@ -1125,6 +1206,96 @@ async function oauthCallback(req, res, provider) {
     res.writeHead(302, { Location: site + '/?' + params.toString() }); return res.end();
   } catch (e) {
     res.writeHead(302, { Location: site + '/?oauth_error=1' }); return res.end();
+  }
+}
+
+/* ------------------------------ /api/photos (Omni real-photo search) ------------------------------ */
+// Searches licensed photo libraries through their official APIs. Keys go in Render env vars:
+//   UNSPLASH_ACCESS_KEY, PEXELS_KEY, PIXABAY_KEY.  First one that returns results wins.
+// (Getty Images and Pinterest are NOT searchable here: both only grant API access to approved partners.)
+function cleanPhotoQuery(text) {
+  return String(text || '')
+    .replace(/\b(from|on|using|via)\s+(pinterest|getty( images)?|unsplash|pexels|pixabay)\b/gi, ' ')
+    .replace(/\b(please|can you|could you|i want|i need|i'?d like|looking for)\b/gi, ' ')
+    .replace(/\b(find|show|get|search( for)?|send|give)( me)?\b/gi, ' ')
+    .replace(/\b(a|an|some|the|real|nice|good|stock|high[- ]quality)\b/gi, ' ')
+    .replace(/\b(photos?|pictures?|pics?|images?)\b( of| for)?/gi, ' ')
+    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+}
+async function handlePhotos(req, res) {
+  cors(res);
+  const body = await readJson(req);
+  if (!body || !body.query) return send(res, 400, { error: 'Missing query' });
+  const userId = req.headers['x-mist-user'] || 'anon';
+  if (touchUser(userId).banned) return send(res, 403, { error: 'Suspended' });
+  const q = cleanPhotoQuery(body.query) || String(body.query).slice(0, 100);
+  const enc = encodeURIComponent(q);
+  const tryGet = async (name, url, headers, parse) => {
+    try {
+      const r = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+      if (!r.ok) { console.error('Photo search ' + name + ' error ' + r.status); return null; }
+      const photos = parse(await r.json()).filter(p => p.url);
+      return photos.length ? photos : null;
+    } catch (e) { console.error('Photo search ' + name + ' failed:', e.message); return null; }
+  };
+  const unsplash = (process.env.UNSPLASH_ACCESS_KEY || '').trim();
+  const pexels = (process.env.PEXELS_KEY || '').trim();
+  const pixabay = (process.env.PIXABAY_KEY || '').trim();
+  let photos = null;
+  if (unsplash) photos = await tryGet('unsplash', 'https://api.unsplash.com/search/photos?per_page=3&query=' + enc, { authorization: 'Client-ID ' + unsplash, 'accept-version': 'v1' },
+    j => (j.results || []).map(p => ({ url: p.urls && p.urls.regular, alt: p.alt_description || q, author: (p.user && p.user.name) || 'Unknown', authorUrl: p.user && p.user.links && p.user.links.html ? p.user.links.html + '?utm_source=mist&utm_medium=referral' : '', source: 'Unsplash', link: 'https://unsplash.com/?utm_source=mist&utm_medium=referral' })));
+  if (!photos && pexels) photos = await tryGet('pexels', 'https://api.pexels.com/v1/search?per_page=3&query=' + enc, { authorization: pexels },
+    j => (j.photos || []).map(p => ({ url: p.src && (p.src.large || p.src.medium), alt: p.alt || q, author: p.photographer || 'Unknown', authorUrl: p.photographer_url || '', source: 'Pexels', link: p.url || 'https://www.pexels.com' })));
+  if (!photos && pixabay) photos = await tryGet('pixabay', 'https://pixabay.com/api/?image_type=photo&per_page=3&safesearch=true&q=' + enc + '&key=' + encodeURIComponent(pixabay), {},
+    j => (j.hits || []).map(p => ({ url: p.webformatURL, alt: p.tags || q, author: p.user || 'Unknown', authorUrl: p.user ? 'https://pixabay.com/users/' + encodeURIComponent(p.user) + '-' + p.user_id + '/' : '', source: 'Pixabay', link: p.pageURL || 'https://pixabay.com' })));
+  if (!photos) return send(res, 404, { error: 'No photo library configured or nothing matched.' });
+  return send(res, 200, { query: q, photos });
+}
+
+/* ------------------------------ /api/video (Omni video via LTX) ------------------------------ */
+// LTX is a VIDEO model (async: submit a job, then poll). Env: LTX_KEY (required), LTX_MODEL (default
+// ltx-2-5-fast), LTX_RESOLUTION (default 1920x1080), LTX_API_URL (default https://api.ltx.io/v2/text-to-video).
+async function handleVideo(req, res) {
+  cors(res);
+  const key = keyFor('ltx');
+  if (!key) return send(res, 503, { error: 'No LTX key configured (set LTX_KEY in Render).' });
+  const api = (process.env.LTX_API_URL || 'https://api.ltx.io/v2/text-to-video').trim();
+  const hdrs = { authorization: 'Bearer ' + key, 'content-type': 'application/json' };
+  try {
+    if (req.method === 'GET') {
+      const id = new URL(req.url, 'http://x').searchParams.get('id') || '';
+      if (!/^[\w-]{4,80}$/.test(id)) return send(res, 400, { error: 'Bad id' });
+      const r = await fetch(api + '/' + id, { headers: hdrs, signal: AbortSignal.timeout(15000) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return send(res, 502, { status: 'failed', error: (j.error && (j.error.message || j.error)) || ('LTX returned ' + r.status) });
+      const st = String(j.status || '').toLowerCase();
+      if (st === 'completed') return send(res, 200, { status: 'completed', url: j.result && j.result.video_url, provider: 'LTX 2.5' });
+      if (st === 'failed' || st === 'error' || st === 'cancelled') return send(res, 200, { status: 'failed', error: (j.error && (j.error.message || j.error)) || 'Generation failed' });
+      return send(res, 200, { status: 'pending' });
+    }
+    const body = await readJson(req);
+    if (!body || !body.prompt) return send(res, 400, { error: 'Missing prompt' });
+    const userId = req.headers['x-mist-user'] || 'anon';
+    if (touchUser(userId).banned) return send(res, 403, { error: 'Suspended' });
+    const r = await fetch(api, {
+      method: 'POST', headers: hdrs, signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({
+        prompt: String(body.prompt).slice(0, 4900),
+        model: (process.env.LTX_MODEL || 'ltx-2-5-fast').trim(),
+        duration: null,
+        resolution: (process.env.LTX_RESOLUTION || '1920x1080').trim(),
+        generate_audio: true
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.id) {
+      console.error('LTX submit error ' + r.status + ':', JSON.stringify(j).slice(0, 400));
+      return send(res, 502, { error: 'LTX rejected the request (' + r.status + '). ' + ((j.error && (j.error.message || j.error)) || '') });
+    }
+    return send(res, 200, { id: j.id });
+  } catch (e) {
+    console.error('LTX failed:', e.message);
+    return send(res, 502, { error: 'Could not reach LTX.' });
   }
 }
 
@@ -1797,6 +1968,8 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/api/chat' && req.method === 'POST') return handleChat(req, res);
   if (urlPath === '/api/sync' && req.method === 'POST') return handleSync(req, res);
   if (urlPath === '/api/generate' && req.method === 'POST') return handleGenerate(req, res);
+  if (urlPath === '/api/photos' && req.method === 'POST') return handlePhotos(req, res);
+  if (urlPath === '/api/video' && (req.method === 'POST' || req.method === 'GET')) return handleVideo(req, res);
   if (urlPath === '/api/tts' && req.method === 'POST') return handleTTS(req, res);
   if (urlPath === '/api/run-code' && req.method === 'POST') return handleRunCode(req, res);
   if (urlPath === '/api/agent/init' && req.method === 'POST') return handleAgentInit(req, res);
