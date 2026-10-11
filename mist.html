@@ -313,6 +313,16 @@ table.data th{color:var(--muted);font-size:11.5px;text-transform:uppercase;lette
 pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:13px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6}
 
 /* Studio */
+.dsk{display:flex;flex-direction:column;flex:1;min-height:0;background:var(--bg)}
+.dsk-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line,rgba(127,127,127,.2));flex-wrap:wrap}
+.dsk-title{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dsk-info{font-size:12.5px;opacity:.65}
+.dsk-actions{display:flex;align-items:center;gap:10px}
+.dsk-timer{font-size:12.5px;font-variant-numeric:tabular-nums;opacity:.7}
+.dsk-stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
+.dsk-stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
+.dsk-empty{max-width:420px;text-align:center;opacity:.7;padding:24px;line-height:1.5}
+.dsk [hidden]{display:none!important}
 .studio{display:grid;grid-template-columns:360px 1fr;gap:0;flex:1;min-height:0;background:var(--bg)}
 .studio-left{border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;background:var(--surface-2)}
 .studio-left .pad{padding:18px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:18px}
@@ -678,6 +688,8 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 5h16v14H4z"/><path d="M4 9h16"/></svg> Artifacts</button>
         <button class="navitem" data-view="studio">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M8 8L4 12l4 4M16 8l4 4-4 4M13.5 5l-3 14"/></svg> Mist Codespace</button>
+        <button class="navitem" data-view="desktop">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg> Linux Desktop</button>
         <a class="navitem" id="linkStellar" href="stellar.html" target="_blank" rel="noopener" style="text-decoration:none">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"/></svg> Stellar
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;opacity:.5"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>
@@ -813,6 +825,24 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
         <p class="mini" style="margin-top:-6px">Anything Mist writes as a full HTML page, SVG or standalone file is saved here so you can reopen, preview and download it.</p>
         <div class="grid" id="artifactGrid" style="margin-top:16px"></div>
       </div></div>
+    </section>
+
+    <!-- LINUX DESKTOP -->
+    <section class="view" id="view-desktop">
+      <div class="dsk">
+        <div class="dsk-bar">
+          <div class="dsk-title"><strong>Linux Desktop</strong><span id="dskInfo" class="dsk-info">A private virtual Linux computer in your browser.</span></div>
+          <div class="dsk-actions">
+            <span id="dskTimer" class="dsk-timer" aria-live="off"></span>
+            <button class="btn" id="dskStart">Start desktop</button>
+            <button class="btn" id="dskStop" hidden>Stop</button>
+          </div>
+        </div>
+        <div class="dsk-stage" id="dskStage">
+          <p class="dsk-empty" id="dskEmpty">Press <b>Start desktop</b> to launch it. Sessions are short and shut down automatically; nothing you do there is saved.</p>
+          <iframe id="dskFrame" title="Linux desktop" hidden allow="clipboard-read; clipboard-write; fullscreen"></iframe>
+        </div>
+      </div>
     </section>
 
     <!-- STUDIO -->
@@ -2139,10 +2169,59 @@ function render() {
     : 'Pluto — fast answers for everyday questions.';
 }
 
+/* ------------------------------ Linux desktop (E2B) ------------------------------ */
+const DSK = { expiresAt: 0, tick: null };
+function dskHdr() { return { 'content-type': 'application/json', 'x-mist-user': S.userId }; }
+function dskUi(active, msg) {
+  $('#dskStart').hidden = active; $('#dskStop').hidden = !active;
+  $('#dskFrame').hidden = !active; $('#dskEmpty').hidden = active;
+  if (!active) { $('#dskFrame').removeAttribute('src'); $('#dskTimer').textContent = ''; clearInterval(DSK.tick); }
+  if (msg) $('#dskInfo').textContent = msg;
+}
+function dskRunTimer() {
+  clearInterval(DSK.tick);
+  const upd = () => {
+    const left = Math.max(0, Math.round((DSK.expiresAt - Date.now()) / 1000));
+    $('#dskTimer').textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') + ' left';
+    if (left <= 0) { dskUi(false, 'Session ended. Start a new one any time.'); }
+  };
+  upd(); DSK.tick = setInterval(upd, 1000);
+}
+async function dskStart() {
+  const btn = $('#dskStart'); btn.disabled = true; btn.textContent = 'Starting…';
+  try {
+    const r = await fetch('/api/desktop/start', { method: 'POST', headers: dskHdr(), body: '{}' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) throw new Error(j.error || 'Could not start the desktop.');
+    DSK.expiresAt = j.expiresAt;
+    $('#dskFrame').src = j.url;
+    dskUi(true, 'Connected. Click inside the screen to use it.');
+    dskRunTimer();
+  } catch (e) { dskUi(false, e.message); toast(e.message); }
+  btn.disabled = false; btn.textContent = 'Start desktop';
+}
+async function dskStop() {
+  dskUi(false, 'Desktop stopped.');
+  try { await fetch('/api/desktop/stop', { method: 'POST', headers: dskHdr(), body: '{}' }); } catch {}
+}
+async function dskStatus() {
+  try {
+    const r = await fetch('/api/desktop/status', { method: 'POST', headers: dskHdr(), body: '{}' });
+    const j = await r.json();
+    if (!j.available) { dskUi(false, 'Not available yet — the server owner needs to enable it.'); $('#dskStart').disabled = true; return; }
+    $('#dskStart').disabled = false;
+    if (!j.active) dskUi(false, 'Free sessions of ' + j.sessionMinutes + ' min · ' + j.hoursLeftThisMonth + ' h left this month for everyone.');
+  } catch {}
+}
+$('#dskStart').onclick = dskStart;
+$('#dskStop').onclick = dskStop;
+window.addEventListener('pagehide', () => { if (!$('#dskStop').hidden) fetch('/api/desktop/stop', { method: 'POST', headers: dskHdr(), body: '{}', keepalive: true }).catch(() => {}); });
+
 function setView(v) {
   S.view = v;
   $$('.view').forEach(el => el.classList.toggle('on', el.id === 'view-' + v));
   $$('.navitem[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  if (v === 'desktop' && $('#dskStop').hidden) dskStatus();
   render();
 }
 

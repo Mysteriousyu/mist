@@ -83,7 +83,7 @@ function blankData() {
       groq:       { label: 'Groq (⚡ FASTEST)',format: 'openai',    baseUrl: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '',
                     models: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3-32b'] },
       nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
-                    models: ['google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
+                    models: ['moonshotai/kimi-k3', 'google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
       nim2:       { label: 'NVIDIA NIM (2nd key)', format: 'openai',  baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
                     models: ['nvidia/nemotron-3.5-lightning-30b-a3b', 'deepseek-ai/deepseek-v4-flash-0731', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct'] },
       openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '',
@@ -140,8 +140,12 @@ function blankData() {
       pollinations: { label: 'Pollinations (🆓 FREE)', format: 'openai', baseUrl: 'https://text.pollinations.ai/v1/chat/completions', apiKey: 'dummy', models: ['openai', 'mistral', 'llama'] },
       // Cloudflare AI Gateway (Unified Billing) — frontier models billed through Cloudflare credits.
       // Only active when CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_GATEWAY_ID (+ a token) are set; the URL is built at request time.
-      cfgateway:  { label: 'Cloudflare AI Gateway (Grok / Gemini)', format: 'openai', baseUrl: '', apiKey: '',
-                    models: ['grok/grok-4.7', 'google-ai-studio/gemini-3.8-flash'] },
+      cfgateway:  { label: 'Cloudflare AI Gateway (Gemini)', format: 'openai', baseUrl: '', apiKey: '',
+                    models: ['google-ai-studio/gemini-3.8-flash'] },
+      // Cloudflare Workers AI third-party catalog (paid per token from Cloudflare credits; no gateway id needed).
+      // Uses CLOUDFLARE_ACCOUNT_ID + the existing Cloudflare token. Ids copied from the Cloudflare dashboard.
+      cfai:       { label: 'Cloudflare AI (Grok 4.7 / Opus 5.5)', format: 'openai', baseUrl: '', apiKey: '',
+                    models: ['xai/grok-4.7', 'anthropic/claude-opus-5.5'] },
       bluesminds: { label: 'Bluesminds', format: 'openai', baseUrl: 'https://api.bluesminds.com/v1/chat/completions', apiKey: '',
                     models: ['moonshotai/kimi-k3', 'nvidia/nemotron-3-ultra-550b-a55b', 'openai/gpt-oss-20b'] }
     },
@@ -175,7 +179,7 @@ function blankData() {
         // feature (Stellar) is the one place that always calls claude-fable-5-1 directly, hardcoded
         // separately in the agent-brain code, regardless of whatever Sonar's chat chain is set to.
         codingChain: [
-          { provider: 'cfgateway', model: 'grok/grok-4.7' },
+          { provider: 'cfai', model: 'xai/grok-4.7' },
           { provider: 'bluesminds', model: 'moonshotai/kimi-k3' },
           { provider: 'cometapi', model: 'gemini-4-argon' },
           { provider: 'cometapi', model: 'claude-fable-5-1' },
@@ -188,13 +192,19 @@ function blankData() {
           { provider: 'gemini', model: 'gemini-3.6-flash' },
           { provider: 'openai', model: 'gpt-4o' }
         ],
-        // Thinking effort (chosen by the user in the chat UI). Only low and medium have their own
-        // models; high and ultra deliberately have no entry and use codingChain above (the
-        // existing default). Each effort chain is followed by codingChain as a safety net.
+        // Thinking effort (chosen by the user in the chat UI). Each effort chain is followed by codingChain. Each effort chain is followed by codingChain as a safety net.
         effortChains: {
           low:    [{ provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free' }],
           // Space Bunny Alpha is a stealth model that can be pulled without notice. If it errors or
           // disappears, the chain moves on to the free Qwen3.8 27B, then the default chain.
+          // Ultra only: Claude Opus 5.5 via Cloudflare (paid, $4/$20 per 1M tokens), then the default chain
+          // (which starts with Grok 4.7). Skipped automatically if Cloudflare credits/token aren't set.
+          ultra: [
+            { provider: 'cfai', model: 'anthropic/claude-opus-5.5' },
+            { provider: 'nim', model: 'moonshotai/kimi-k3' }
+          ],
+          // High: Kimi K3 on NVIDIA NIM first, then the default chain (Grok 4.7 ...).
+          high: [{ provider: 'nim', model: 'moonshotai/kimi-k3' }],
           medium: [
             { provider: 'openrouter', model: 'stealth/space-bunny-alpha' },
             { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free' }
@@ -274,10 +284,26 @@ function reconcile(d) {
     chain.unshift(...toAdd);
   };
   const r = merged.routing || {};
-  if (r.sonar) addTop(r.sonar.codingChain, [
-    { provider: 'cfgateway', model: 'grok/grok-4.7' },
-    { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
-  ]);
+  if (r.sonar) {
+    // Grok 4.7 moved from the AI Gateway (wrong id) to Cloudflare's catalog id xai/grok-4.7.
+    if (Array.isArray(r.sonar.codingChain)) {
+      r.sonar.codingChain = r.sonar.codingChain.filter(t => !(t.provider === 'cfgateway' && t.model === 'grok/grok-4.7'));
+    }
+    addTop(r.sonar.codingChain, [
+      { provider: 'cfai', model: 'xai/grok-4.7' },
+      { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
+    ]);
+    // Ultra effort gets Opus 5.5 first; only added when no ultra chain exists yet (console edits stick).
+    if (r.sonar.effortChains && !r.sonar.effortChains.ultra) {
+      r.sonar.effortChains.ultra = [
+        { provider: 'cfai', model: 'anthropic/claude-opus-5.5' },
+        { provider: 'nim', model: 'moonshotai/kimi-k3' }
+      ];
+    }
+    if (r.sonar.effortChains && !r.sonar.effortChains.high) {
+      r.sonar.effortChains.high = [{ provider: 'nim', model: 'moonshotai/kimi-k3' }];
+    }
+  }
   if (r.pluto) {
     addTop(r.pluto.casualChain, [{ provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' }]);
     addTop(r.pluto.codingChain, [{ provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' }]);
@@ -686,6 +712,19 @@ function resolveTargets(assistant, messages, effort) {
           model: t.model
         };
       }
+      // Cloudflare Workers AI third-party models (Grok 4.7, Opus 5.5): account id + existing Cloudflare token.
+      if (t.provider === 'cfai') {
+        const acct = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+        const k = keyFor('cfai') || keyFor('cloudflare');
+        if (!acct || !k) return null;
+        return {
+          providerCfg: Object.assign({}, p, {
+            apiKey: k,
+            baseUrl: 'https://api.cloudflare.com/client/v4/accounts/' + encodeURIComponent(acct) + '/ai/v1/chat/completions'
+          }),
+          model: t.model
+        };
+      }
       const key = keyFor(t.provider);
       if (!key) return null;
       // clone provider with the resolved key so buildUpstream uses it
@@ -734,6 +773,33 @@ function recordChat(userId, meta, userMessages, assistantReply) {
 }
 
 /* ------------------------------ chat proxy ------------------------------ */
+/* Code review pass (Sonar High / Ultra): before code reaches the user, Kimi K3 (NVIDIA NIM) reviews and
+   debugs the draft. Returns the corrected section, or null on any failure/timeout so the original draft is used. */
+async function reviewCodeWithKimi(draft, question) {
+  const p = DB.providers.nim;
+  const key = keyFor('nim') || keyFor('nim2');
+  if (!p || !key || !draft) return null;
+  try {
+    const r = await fetch(p.baseUrl || 'https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
+      body: JSON.stringify({
+        model: 'moonshotai/kimi-k3', stream: false, temperature: 0.2, max_tokens: 8000,
+        messages: [
+          { role: 'system', content: 'You are a meticulous senior code reviewer and debugger. You receive a draft section of an assistant reply that contains code. Mentally run and review the code: fix bugs, wrong APIs, missing imports, edge cases and security problems, and make sure it actually satisfies the user\'s request. Return ONLY the corrected section as markdown, in the same format and language as the draft (keep code fences, keep any [MEMORY: ...] line verbatim). If the draft is already correct, return it unchanged. Do not add commentary about reviewing, and never mention a reviewer.' },
+          { role: 'user', content: 'User request:\n' + String(question || '').slice(0, 3000) + '\n\n--- DRAFT SECTION ---\n' + draft }
+        ]
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+    if (!r.ok) { console.error('[review] Kimi K3 returned ' + r.status); return null; }
+    const j = await r.json();
+    const out = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+    if (!out || out.length < 20 || !out.includes('```')) return null; // reject empty/garbled reviews
+    return out.trim();
+  } catch (e) { console.error('[review] failed:', e.message); return null; }
+}
+
 async function handleChat(req, res) {
   cors(res);
   const body = await readJson(req);
@@ -786,6 +852,7 @@ async function handleChat(req, res) {
   } else {
     targets = resolveTargets(assistant, messages, effort);
   }
+  const reviewCode = assistant === 'sonar' && (effort === 'high' || effort === 'ultra') && !isMultimodal(messages) && !!(keyFor('nim') || keyFor('nim2'));
   if (!targets.length) return send(res, 503, { error: 'No API key configured for ' + assistant + '. Set one in the admin console → Keys & Models.' });
 
   const customPrompt = (DB.systemPrompts || {})[assistant];
@@ -868,7 +935,7 @@ async function handleChat(req, res) {
     const startStream = () => { if (!started) { started = true; res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'x-model-used': model }); } };
     const reader = upstream.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', full = '';
+    let buf = '', full = '', sent = 0;
     const sources = [];
     try {
       while (true) {
@@ -887,8 +954,19 @@ async function handleChat(req, res) {
             const piece = extractDelta(providerCfg.format, data);
             if (piece) {
               full += piece;
-              startStream();
-              res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: piece } }] }) + '\n\n');
+              if (reviewCode) {
+                // Stream prose normally, but hold everything from the first code fence for review.
+                const fenceAt = full.indexOf('```');
+                let limit = fenceAt >= 0 ? fenceAt : full.length - (/`{1,2}$/.exec(full) || [''])[0].length;
+                if (limit > sent) {
+                  startStream();
+                  res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: full.slice(sent, limit) } }] }) + '\n\n');
+                  sent = limit;
+                }
+              } else {
+                startStream();
+                res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: piece } }] }) + '\n\n');
+              }
             }
           }
         }
@@ -897,6 +975,19 @@ async function handleChat(req, res) {
     if (!full && !started && i < targets.length - 1) {
       console.error('Provider ' + (providerCfg.label || 'unknown') + ' (' + model + ') returned an empty stream — trying next');
       continue;
+    }
+    if (reviewCode && full) {
+      // Flush what is left: code gets reviewed first; plain prose is just sent.
+      let rest = full.slice(sent);
+      if (rest.includes('```')) {
+        const lastUser = [...messages].reverse().find(m => m.role === 'user');
+        const reviewed = await reviewCodeWithKimi(rest, lastUser && typeof lastUser.content === 'string' ? lastUser.content : '');
+        if (reviewed) { full = full.slice(0, sent) + reviewed; rest = reviewed; }
+      }
+      if (rest) {
+        startStream();
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: rest } }] }) + '\n\n');
+      }
     }
     startStream();
     if (sources.length && full) res.write('data: ' + JSON.stringify({ sources: sources.slice(0, 8) }) + '\n\n');
@@ -1479,6 +1570,88 @@ async function handleTTS(req, res) {
 
 /* ------------------------------ Sandboxed Code Execution ------------------------------ */
 const vm = require('vm');
+/* ------------------------------ virtual Linux desktop (E2B, free tier) ------------------------------
+   Uses E2B Desktop Sandbox (npm @e2b/desktop). Needs env E2B_API_KEY. Everything is capped so it stays inside
+   E2B's free Hobby plan (100 sandbox-hours/month, 5 concurrent, 1-hour max session, no overage billing):
+     DESKTOP_SESSION_MIN   minutes per session            (default 20, max 55)
+     DESKTOP_MAX_CONCURRENT  desktops at once, all users   (default 2, max 5)
+     DESKTOP_MONTHLY_HOURS stop starting new ones after N  (default 80)                                   */
+const DESKTOP_SESSION_MS = Math.min(55, Math.max(1, parseInt(process.env.DESKTOP_SESSION_MIN || '20', 10) || 20)) * 60000;
+const DESKTOP_MAX = Math.min(5, Math.max(1, parseInt(process.env.DESKTOP_MAX_CONCURRENT || '2', 10) || 2));
+const DESKTOP_MONTH_SEC = (parseFloat(process.env.DESKTOP_MONTHLY_HOURS || '80') || 80) * 3600;
+const desktops = new Map(); // userId -> { sandbox, startedAt, expiresAt, timer }
+let e2bMod;
+function loadE2B() {
+  if (e2bMod !== undefined) return e2bMod;
+  try { e2bMod = require('@e2b/desktop'); } catch (e) { console.error('[desktop] @e2b/desktop not installed:', e.message); e2bMod = null; }
+  return e2bMod;
+}
+function desktopUsage() {
+  const month = new Date().toISOString().slice(0, 7);
+  if (!DB.desktopUsage || DB.desktopUsage.month !== month) DB.desktopUsage = { month, seconds: 0 };
+  return DB.desktopUsage;
+}
+async function endDesktop(userId, why) {
+  const d = desktops.get(userId);
+  if (!d) return false;
+  desktops.delete(userId);
+  clearTimeout(d.timer);
+  const u = desktopUsage();
+  u.seconds += Math.ceil((Date.now() - d.startedAt) / 1000);
+  save();
+  try { await d.sandbox.kill(); } catch (e) { console.error('[desktop] kill failed:', e.message); }
+  console.log('[desktop] ended (' + (why || 'stop') + ') for ' + userId);
+  return true;
+}
+async function handleDesktop(req, res, action) {
+  cors(res);
+  const body = req.method === 'POST' ? ((await readJson(req)) || {}) : {};
+  const userId = req.headers['x-mist-user'] || body.userId || 'anon';
+  const user = touchUser(userId);
+  if (user.banned) return send(res, 403, { error: 'Your access has been suspended.' });
+  const cur = desktops.get(userId);
+
+  if (action === 'status') {
+    const u = desktopUsage();
+    return send(res, 200, {
+      available: !!process.env.E2B_API_KEY,
+      active: !!cur, expiresAt: cur ? cur.expiresAt : null,
+      sessionMinutes: Math.round(DESKTOP_SESSION_MS / 60000),
+      hoursLeftThisMonth: Math.max(0, Math.round((DESKTOP_MONTH_SEC - u.seconds) / 360) / 10)
+    });
+  }
+  if (action === 'stop') {
+    await endDesktop(userId, 'user stop');
+    return send(res, 200, { ok: true });
+  }
+  // start
+  if (!process.env.E2B_API_KEY) return send(res, 503, { error: 'Virtual desktop is not configured. Set E2B_API_KEY on the server.' });
+  const mod = loadE2B();
+  if (!mod || !mod.Sandbox) return send(res, 503, { error: 'Virtual desktop package is not installed on the server.' });
+  if (cur) return send(res, 200, { url: cur.url, expiresAt: cur.expiresAt, resumed: true });
+  if (desktops.size >= DESKTOP_MAX) return send(res, 429, { error: 'All virtual desktops are busy right now. Try again in a few minutes.' });
+  if (desktopUsage().seconds >= DESKTOP_MONTH_SEC) return send(res, 429, { error: 'The free monthly desktop allowance has been used up. It resets next month.' });
+
+  // reserve the slot first so two quick clicks can't create two sandboxes
+  const slot = { sandbox: null, startedAt: Date.now(), expiresAt: Date.now() + DESKTOP_SESSION_MS, timer: null, url: '' };
+  desktops.set(userId, slot);
+  try {
+    const sandbox = await mod.Sandbox.create({ apiKey: process.env.E2B_API_KEY, resolution: [1280, 720], timeoutMs: DESKTOP_SESSION_MS });
+    slot.sandbox = sandbox;
+    await sandbox.stream.start({ requireAuth: true });
+    slot.url = sandbox.stream.getUrl({ authKey: sandbox.stream.getAuthKey(), autoConnect: true, resize: 'scale' });
+    slot.startedAt = Date.now();
+    slot.expiresAt = slot.startedAt + DESKTOP_SESSION_MS;
+    slot.timer = setTimeout(() => endDesktop(userId, 'time limit'), DESKTOP_SESSION_MS + 2000);
+    return send(res, 200, { url: slot.url, expiresAt: slot.expiresAt });
+  } catch (e) {
+    console.error('[desktop] start failed:', e.message);
+    desktops.delete(userId);
+    if (slot.sandbox) { try { await slot.sandbox.kill(); } catch {} }
+    return send(res, 502, { error: 'Could not start the desktop: ' + String(e.message || e).slice(0, 200) });
+  }
+}
+
 async function handleRunCode(req, res) {
   cors(res);
   const body = await readJson(req);
@@ -1987,6 +2160,9 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/api/video' && (req.method === 'POST' || req.method === 'GET')) return handleVideo(req, res);
   if (urlPath === '/api/tts' && req.method === 'POST') return handleTTS(req, res);
   if (urlPath === '/api/run-code' && req.method === 'POST') return handleRunCode(req, res);
+  if (urlPath === '/api/desktop/start' && req.method === 'POST') return handleDesktop(req, res, 'start');
+  if (urlPath === '/api/desktop/stop' && req.method === 'POST') return handleDesktop(req, res, 'stop');
+  if (urlPath === '/api/desktop/status' && (req.method === 'POST' || req.method === 'GET')) return handleDesktop(req, res, 'status');
   if (urlPath === '/api/agent/init' && req.method === 'POST') return handleAgentInit(req, res);
   if (urlPath === '/api/agent/step' && req.method === 'POST') return handleAgentStep(req, res);
   if (urlPath === '/api/agent/stop' && req.method === 'POST') return handleAgentStop(req, res);
