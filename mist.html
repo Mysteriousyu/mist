@@ -495,8 +495,9 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
   /* Forgot password overlay */
   #forgotOverlay .auth-card{padding:20px;width:90vw}
   
-  /* Settings/modals: full width on mobile */
-  .modal{width:92vw;max-height:85vh}
+  /* Settings/modals: constrain sheet on mobile */
+  .modal .sheet{width:92vw;max-height:80dvh}
+  .modal{padding:10px}
   
   /* Safe area padding for notched phones (iPhone etc.) */
   .topbar{padding-left:max(12px, env(safe-area-inset-left));padding-right:max(12px, env(safe-area-inset-right))}
@@ -512,6 +513,11 @@ pre.snippet{background:var(--surface-2);border:1px solid var(--border);border-ra
   .switch button{padding:4px 8px;font-size:11px}
   .tool-pill{font-size:10px}
   #voiceOrb{width:80px;height:80px}
+  .section-h{flex-wrap:wrap;gap:6px}
+  .section-h .mini{font-size:11px}
+  .grid{grid-template-columns:1fr}
+  .card{padding:12px}
+  .modal .sheet{width:96vw}
 }
 
 /* Touch-friendly: larger tap targets on touch devices */
@@ -1640,6 +1646,9 @@ function omniIntent(text) {
       (/\b(find|show|get|search|send|look(ing)? for|need|want|real|stock|pinterest|getty)\b/.test(t) || /\b(photo|picture|image)s? of\b/.test(t))) return 'photo';
   // Clearly conversational / instruction text → answer in words, don't draw anything.
   if (/\?\s*$/.test(t) || /^(reply|respond|answer|explain|what|why|how|who|when|where|write|tell|summari[sz]e|translate|list|describe|say|can you|could you|do you|is |are |brainstorm|help)\b/.test(t) || /reply with|exactly:/.test(t)) return 'chat';
+  // Only generate an image when the text looks like a scene description — has visual nouns or adjectives,
+  // not just a plain sentence or instruction. Short plain text defaults to chat.
+  if (len < 120 && !/\b(scene|landscape|portrait|sunset|sunrise|forest|mountain|city|ocean|abstract|fantasy|cyberpunk|anime|cartoon|realistic|3d|pixel|neon|dark|bright|colorful|aesthetic|vibe|style|art)\b/.test(t)) return 'chat';
   return 'image'; // a bare scene description like "a red dragon at sunset" still draws it
 }
 
@@ -1961,7 +1970,7 @@ function renderArtifacts() {
 function renderConnectors() {
   const grid = $('#connGrid');
   const count = Object.values(S.connectors).filter(c => c && c.connected).length;
-  $('#connCount').textContent = count + ' of ' + CONNECTORS.length + ' connected';
+  $('#connCount').textContent = count ? count + ' connected' : 'None connected';
 
   // group by category
   const groups = {};
@@ -1970,8 +1979,8 @@ function renderConnectors() {
     (groups[cat] = groups[cat] || []).push({ id, name, desc, status });
   });
   const statusBadge = s => {
-    if (s === 'works') return '<span class="badge on" title="Working right now">Active</span>';
-    if (s === 'ready') return '<span class="badge" style="background:var(--brand-soft);color:var(--brand)" title="Add the API key to activate">Add key</span>';
+    if (s === 'works') return '<span class="badge" style="background:var(--brand-soft);color:var(--brand)" title="Available — connect to use">Available</span>';
+    if (s === 'ready') return '<span class="badge" style="background:var(--warning-soft,#fff3cd);color:var(--warning,#856404)" title="Add the API key to activate">Add key</span>';
     return '<span class="badge off">Setup needed</span>';
   };
   grid.innerHTML = Object.entries(groups).map(([cat, items]) => `
