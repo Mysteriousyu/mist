@@ -83,7 +83,7 @@ function blankData() {
       groq:       { label: 'Groq (⚡ FASTEST)',format: 'openai',    baseUrl: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '',
                     models: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3-32b'] },
       nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
-                    models: ['moonshotai/kimi-k3', 'google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
+                    models: ['moonshotai/kimi-k3', 'z-ai/glm-5-3', 'google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
       nim2:       { label: 'NVIDIA NIM (2nd key)', format: 'openai',  baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
                     models: ['nvidia/nemotron-3.5-lightning-30b-a3b', 'deepseek-ai/deepseek-v4-flash-0731', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct'] },
       openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '',
@@ -112,7 +112,8 @@ function blankData() {
                     models: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'mistralai/Mixtral-8x22B-Instruct-v0.1', 'Qwen/Qwen2.5-72B-Instruct-Turbo'] },
       fireworks:  { label: 'Fireworks AI',     format: 'openai',    baseUrl: 'https://api.fireworks.ai/inference/v1/chat/completions', apiKey: '',
                     models: ['accounts/fireworks/models/llama-v3p3-70b-instruct', 'accounts/fireworks/models/mixtral-8x22b-instruct'] },
-      openrouter: { label: 'OpenRouter',       format: 'openai',    baseUrl: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '' },
+      openrouter: { label: 'OpenRouter',       format: 'openai',    baseUrl: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '',
+                    models: ['nvidia/nemotron-3-ultra-550b-a55b:free', 'cohere/north-mini-code:free', 'poolside/laguna-xs-2.1:free', 'apodex/apodex-1.1-mini:free', 'deepseek/deepseek-v4-flash-0731:free', 'inclusionai/ling-3.0-flash-sante:free', 'stealth/space-bunny-alpha', 'qwen/qwen3.8-27b:free'] },
       vercel:     { label: 'Vercel AI',        format: 'openai',    baseUrl: 'https://api.vercel.ai/v1/chat/completions', apiKey: '',
                     models: ['claude-opus-4-8', 'claude-sonnet-4-6', 'gpt-4o', 'gpt-4o-mini'] },
       xplabs:     { label: 'Experiential Labs', format: 'openai',   baseUrl: 'https://api.experientiallabs.ai/v1/chat/completions', apiKey: '',
@@ -192,22 +193,49 @@ function blankData() {
           { provider: 'gemini', model: 'gemini-3.6-flash' },
           { provider: 'openai', model: 'gpt-4o' }
         ],
-        // Thinking effort (chosen by the user in the chat UI). Each effort chain is followed by codingChain. Each effort chain is followed by codingChain as a safety net.
+        // Thinking effort (chosen by the user in the chat UI). Each effort chain is followed by codingChain as a safety net.
+        // High and Ultra use task-based routing: the chain is picked by classifySonarTask() at request time.
+        // The effortChains below are used as defaults when task routing doesn't apply (multimodal, etc.).
         effortChains: {
           low:    [{ provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free' }],
-          // Space Bunny Alpha is a stealth model that can be pulled without notice. If it errors or
-          // disappears, the chain moves on to the free Qwen3.8 27B, then the default chain.
-          // Ultra only: Claude Opus 5.5 via Cloudflare (paid, $4/$20 per 1M tokens), then the default chain
-          // (which starts with Grok 4.7). Skipped automatically if Cloudflare credits/token aren't set.
-          ultra: [
-            { provider: 'cfai', model: 'anthropic/claude-opus-5.5' },
-            { provider: 'nim', model: 'moonshotai/kimi-k3' }
-          ],
-          // High: Kimi K3 on NVIDIA NIM first, then the default chain (Grok 4.7 ...).
-          high: [{ provider: 'nim', model: 'moonshotai/kimi-k3' }],
           medium: [
             { provider: 'openrouter', model: 'stealth/space-bunny-alpha' },
             { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free' }
+          ],
+          // High default (reasoning): Nemotron 3 Ultra (free) then Kimi K3
+          high: [
+            { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
+            { provider: 'nim', model: 'moonshotai/kimi-k3' }
+          ],
+          // Ultra: Opus 5.5 (paid, skipped if no Cloudflare), then Nemotron 3 Ultra (free), then Kimi K3
+          ultra: [
+            { provider: 'cfai', model: 'anthropic/claude-opus-5.5' },
+            { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
+            { provider: 'nim', model: 'moonshotai/kimi-k3' }
+          ]
+        },
+        // Task-based sub-chains for High and Ultra effort (selected by classifySonarTask()).
+        // Each sub-chain is followed by the effort chain above, then codingChain, as fallbacks.
+        taskChains: {
+          reasoning: [
+            { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
+            { provider: 'nim', model: 'moonshotai/kimi-k3' }
+          ],
+          coding: [
+            { provider: 'openrouter', model: 'cohere/north-mini-code:free' },
+            { provider: 'openrouter', model: 'poolside/laguna-xs-2.1:free' }
+          ],
+          debugging: [
+            { provider: 'openrouter', model: 'apodex/apodex-1.1-mini:free' },
+            { provider: 'openrouter', model: 'cohere/north-mini-code:free' }
+          ],
+          toolcall: [
+            { provider: 'nim', model: 'z-ai/glm-5-3' },
+            { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' }
+          ],
+          fast: [
+            { provider: 'openrouter', model: 'deepseek/deepseek-v4-flash-0731:free' },
+            { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free' }
           ]
         },
         fallbacks: []
@@ -293,15 +321,30 @@ function reconcile(d) {
       { provider: 'cfai', model: 'xai/grok-4.7' },
       { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
     ]);
-    // Ultra effort gets Opus 5.5 first; only added when no ultra chain exists yet (console edits stick).
-    if (r.sonar.effortChains && !r.sonar.effortChains.ultra) {
-      r.sonar.effortChains.ultra = [
-        { provider: 'cfai', model: 'anthropic/claude-opus-5.5' },
-        { provider: 'nim', model: 'moonshotai/kimi-k3' }
-      ];
+    // Ultra/High effort chains: update to include Nemotron 3 Ultra (free) from OpenRouter.
+    if (r.sonar.effortChains) {
+      if (!r.sonar.effortChains.ultra) {
+        r.sonar.effortChains.ultra = blankData().routing.sonar.effortChains.ultra;
+      }
+      if (!r.sonar.effortChains.high) {
+        r.sonar.effortChains.high = blankData().routing.sonar.effortChains.high;
+      }
+      // Inject Nemotron 3 Ultra into high chain if it only has old Kimi K3
+      const hi = r.sonar.effortChains.high;
+      if (Array.isArray(hi) && !hi.some(t => t.model === 'nvidia/nemotron-3-ultra-550b-a55b:free')) {
+        hi.unshift({ provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' });
+      }
+      // Inject Nemotron 3 Ultra into ultra chain if it only has Opus + Kimi
+      const ul = r.sonar.effortChains.ultra;
+      if (Array.isArray(ul) && !ul.some(t => t.model === 'nvidia/nemotron-3-ultra-550b-a55b:free')) {
+        const kimiIdx = ul.findIndex(t => t.model === 'moonshotai/kimi-k3');
+        if (kimiIdx > -1) ul.splice(kimiIdx, 0, { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' });
+        else ul.push({ provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' });
+      }
     }
-    if (r.sonar.effortChains && !r.sonar.effortChains.high) {
-      r.sonar.effortChains.high = [{ provider: 'nim', model: 'moonshotai/kimi-k3' }];
+    // Task-based sub-chains (new feature): add if absent.
+    if (!r.sonar.taskChains) {
+      r.sonar.taskChains = blankData().routing.sonar.taskChains;
     }
   }
   if (r.pluto) {
@@ -662,6 +705,39 @@ function isCodingQuestion(messages) {
   return codeWords || codeSymbols;
 }
 
+/* Classify message intent for task-based routing (Sonar High/Ultra). Returns one of:
+   'debugging' — user is asking to fix/debug existing code
+   'coding'    — user wants new code written or modified
+   'toolcall'  — user wants tool/API calling, function calling, structured output
+   'fast'      — short, quick-answer questions
+   'reasoning' — everything else: essays, analysis, reasoning, research, writing */
+function classifySonarTask(messages) {
+  const last = messages[messages.length - 1];
+  const text = (typeof last?.content === 'string' ? last.content : '').toLowerCase();
+  const len = text.length;
+
+  // Debugging: user is asking to fix, debug, or troubleshoot existing code
+  if (/\b(debug|fix (this|my|the)|not working|doesn.?t work|broken|error|traceback|stack ?trace|exception|crash|bug|issue with|trouble|wrong output|unexpected|failing)\b/.test(text) && (isCodingQuestion(messages) || /```/.test(text))) {
+    return 'debugging';
+  }
+
+  // Tool calling: structured output, function calling, API integration
+  if (/\b(tool ?call|function ?call(ing)?|structured output|json schema|openapi|swagger|api endpoint|rest api|graphql|webhook|integration|connect to|call (the|this|an?) api)\b/.test(text)) {
+    return 'toolcall';
+  }
+
+  // Fast: very short questions that just need a quick answer (under 80 chars, no code)
+  if (len < 80 && !isCodingQuestion(messages) && !/\b(write|essay|explain in detail|analyze|research|compare|discuss)\b/.test(text)) {
+    return 'fast';
+  }
+
+  // Coding: user wants new code, or mentions code-related stuff without debugging language
+  if (isCodingQuestion(messages)) return 'coding';
+
+  // Default: reasoning / writing / analysis
+  return 'reasoning';
+}
+
 function resolveTargets(assistant, messages, effort) {
   const route = DB.routing[assistant];
   if (!route) return [];
@@ -672,9 +748,17 @@ function resolveTargets(assistant, messages, effort) {
     const baseChain = route.codingChain || [{ provider: route.provider, model: route.model }];
     // Effort only changes plain-text chats; media/URL messages always use the multimodal chain.
     const effortChain = (!useMultimodal && route.effortChains && route.effortChains[effort]) || null;
+    // Task-based routing for High and Ultra: pick a specialized sub-chain based on the question type.
+    let taskChain = null;
+    if (!useMultimodal && (effort === 'high' || effort === 'ultra') && route.taskChains) {
+      const task = classifySonarTask(messages || []);
+      taskChain = route.taskChains[task] || null;
+    }
     chain = useMultimodal
       ? (route.multimodalChain || [])
-      : (effortChain && effortChain.length ? [...effortChain, ...baseChain] : baseChain);
+      : (taskChain && taskChain.length
+          ? [...taskChain, ...(effortChain || []), ...baseChain]
+          : (effortChain && effortChain.length ? [...effortChain, ...baseChain] : baseChain));
     // append global fallbacks after chain
     chain = [...chain, ...(route.fallbacks || [])];
   } else if (assistant === 'pluto') {
@@ -913,8 +997,9 @@ async function handleChat(req, res) {
     const { url, init } = buildUpstream(providerCfg, model, system, messages);
     let upstream;
     try {
-      // 30 second timeout — if provider doesn't respond, skip to next
-      init.signal = AbortSignal.timeout(30000);
+      // 120 second connect timeout — if provider doesn't respond at all, skip to next.
+      // (The old 30s was too short for free-tier models that queue before answering.)
+      init.signal = AbortSignal.timeout(120000);
       upstream = await fetch(url, init);
     } catch (e) {
       console.error('Provider ' + (providerCfg.label || 'unknown') + ' (' + model + ') failed:', e.message);
@@ -937,9 +1022,25 @@ async function handleChat(req, res) {
     const dec = new TextDecoder();
     let buf = '', full = '', sent = 0;
     const sources = [];
+    // Per-chunk inactivity timeout: if the provider goes silent for 45s mid-stream
+    // (after already sending some content), finalize what we have instead of hanging.
+    const CHUNK_TIMEOUT_MS = 45000;
     try {
       while (true) {
-        const { value, done } = await reader.read();
+        let readResult;
+        try {
+          readResult = await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('chunk_timeout')), CHUNK_TIMEOUT_MS);
+            reader.read().then(r => { clearTimeout(timer); resolve(r); }, e => { clearTimeout(timer); reject(e); });
+          });
+        } catch (e) {
+          if (e.message === 'chunk_timeout' && full) {
+            console.error('Provider ' + (providerCfg.label || 'unknown') + ' (' + model + ') stalled mid-stream after ' + full.length + ' chars — finalizing');
+            break; // finalize what we have
+          }
+          throw e;
+        }
+        const { value, done } = readResult;
         if (done) break;
         buf += dec.decode(value, { stream: true });
         const events = buf.split('\n\n'); buf = events.pop();
