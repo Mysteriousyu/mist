@@ -83,7 +83,7 @@ function blankData() {
       groq:       { label: 'Groq (⚡ FASTEST)',format: 'openai',    baseUrl: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '',
                     models: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3-32b'] },
       nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
-                    models: ['moonshotai/kimi-k3', 'z-ai/glm-5-3', 'google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
+                    models: ['z-ai/glm-5-3', 'google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
       nim2:       { label: 'NVIDIA NIM (2nd key)', format: 'openai',  baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
                     models: ['nvidia/nemotron-3.5-lightning-30b-a3b', 'deepseek-ai/deepseek-v4-flash-0731', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct'] },
       openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '',
@@ -202,16 +202,16 @@ function blankData() {
             { provider: 'openrouter', model: 'stealth/space-bunny-alpha' },
             { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free' }
           ],
-          // High default (reasoning): Nemotron 3 Ultra (free) then Kimi K3
+          // High default (reasoning): Nemotron 3 Ultra (free) then Kimi K3 (NVIDIA removed it from NIM, so via Bluesminds)
           high: [
             { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
-            { provider: 'nim', model: 'moonshotai/kimi-k3' }
+            { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
           ],
           // Ultra: Opus 5.5 (paid, skipped if no Cloudflare), then Nemotron 3 Ultra (free), then Kimi K3
           ultra: [
             { provider: 'cfai', model: 'anthropic/claude-opus-5.5' },
             { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
-            { provider: 'nim', model: 'moonshotai/kimi-k3' }
+            { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
           ]
         },
         // Task-based sub-chains for High and Ultra effort (selected by classifySonarTask()).
@@ -219,7 +219,7 @@ function blankData() {
         taskChains: {
           reasoning: [
             { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
-            { provider: 'nim', model: 'moonshotai/kimi-k3' }
+            { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
           ],
           coding: [
             { provider: 'openrouter', model: 'cohere/north-mini-code:free' },
@@ -291,6 +291,30 @@ function reconcile(d) {
       }
     }
   }
+  // NVIDIA removed Kimi K3 from NIM: drop it from the saved NIM model list, and swap any saved chain
+  // entry that points at it for the same model on Bluesminds (or drop it if that's already in the chain).
+  // Idempotent — does nothing once no NIM Kimi K3 entries remain.
+  if (merged.providers && merged.providers.nim && Array.isArray(merged.providers.nim.models)) {
+    merged.providers.nim.models = merged.providers.nim.models.filter(m => m !== 'moonshotai/kimi-k3');
+  }
+  const swapNimKimi = (chain) => {
+    if (!Array.isArray(chain)) return;
+    const has = chain.some(t => t.provider === 'bluesminds' && t.model === 'moonshotai/kimi-k3');
+    for (let i = chain.length - 1; i >= 0; i--) {
+      if (chain[i].provider === 'nim' && chain[i].model === 'moonshotai/kimi-k3') {
+        if (has) chain.splice(i, 1); else chain[i] = { provider: 'bluesminds', model: 'moonshotai/kimi-k3' };
+      }
+    }
+  };
+  if (merged.routing) {
+    for (const asst of Object.values(merged.routing)) {
+      if (!asst || typeof asst !== 'object') continue;
+      for (const v of Object.values(asst)) {
+        if (Array.isArray(v)) swapNimKimi(v);
+        else if (v && typeof v === 'object') Object.values(v).forEach(swapNimKimi);
+      }
+    }
+  }
   // Same shallow-merge problem for Sonar's effort chains: saved routing predates them, so fill
   // them in only when absent (never overwrites chains you've edited in the console).
   const defSonar = blankData().routing.sonar;
@@ -337,7 +361,7 @@ function reconcile(d) {
       // Inject Nemotron 3 Ultra into ultra chain if it only has Opus + Kimi
       const ul = r.sonar.effortChains.ultra;
       if (Array.isArray(ul) && !ul.some(t => t.model === 'nvidia/nemotron-3-ultra-550b-a55b:free')) {
-        const kimiIdx = ul.findIndex(t => t.model === 'moonshotai/kimi-k3');
+        const kimiIdx = ul.findIndex(t => t.model === 'moonshotai/kimi-k3' && t.provider !== 'nim');
         if (kimiIdx > -1) ul.splice(kimiIdx, 0, { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' });
         else ul.push({ provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' });
       }
@@ -859,16 +883,30 @@ function recordChat(userId, meta, userMessages, assistantReply) {
 /* ------------------------------ chat proxy ------------------------------ */
 /* Code review pass (Sonar High / Ultra): before code reaches the user, Kimi K3 (NVIDIA NIM) reviews and
    debugs the draft. Returns the corrected section, or null on any failure/timeout so the original draft is used. */
+/* NVIDIA removed Kimi K3 from NIM, so the reviewer is now tried in order: Kimi K3 on Bluesminds, then the free
+   Nemotron 3 Ultra on OpenRouter. The first one that has a key and answers wins; if none do, the draft is used as-is. */
+const REVIEW_MODELS = [
+  { provider: 'bluesminds', model: 'moonshotai/kimi-k3' },
+  { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' }
+];
 async function reviewCodeWithKimi(draft, question) {
-  const p = DB.providers.nim;
-  const key = keyFor('nim') || keyFor('nim2');
-  if (!p || !key || !draft) return null;
+  if (!draft) return null;
+  for (const t of REVIEW_MODELS) {
+    const out = await reviewCodeWith(t, draft, question);
+    if (out) return out;
+  }
+  return null;
+}
+async function reviewCodeWith(target, draft, question) {
+  const p = DB.providers[target.provider];
+  const key = keyFor(target.provider);
+  if (!p || !p.baseUrl || !key) return null;
   try {
-    const r = await fetch(p.baseUrl || 'https://integrate.api.nvidia.com/v1/chat/completions', {
+    const r = await fetch(p.baseUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
       body: JSON.stringify({
-        model: 'moonshotai/kimi-k3', stream: false, temperature: 0.2, max_tokens: 8000,
+        model: target.model, stream: false, temperature: 0.2, max_tokens: 8000,
         messages: [
           { role: 'system', content: 'You are a meticulous senior code reviewer and debugger. You receive a draft section of an assistant reply that contains code. Mentally run and review the code: fix bugs, wrong APIs, missing imports, edge cases and security problems, and make sure it actually satisfies the user\'s request. Return ONLY the corrected section as markdown, in the same format and language as the draft (keep code fences, keep any [MEMORY: ...] line verbatim). If the draft is already correct, return it unchanged. Do not add commentary about reviewing, and never mention a reviewer.' },
           { role: 'user', content: 'User request:\n' + String(question || '').slice(0, 3000) + '\n\n--- DRAFT SECTION ---\n' + draft }
@@ -876,7 +914,7 @@ async function reviewCodeWithKimi(draft, question) {
       }),
       signal: AbortSignal.timeout(60000)
     });
-    if (!r.ok) { console.error('[review] Kimi K3 returned ' + r.status); return null; }
+    if (!r.ok) { console.error('[review] ' + target.model + ' (' + target.provider + ') returned ' + r.status); return null; }
     const j = await r.json();
     const out = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
     if (!out || out.length < 20 || !out.includes('```')) return null; // reject empty/garbled reviews
