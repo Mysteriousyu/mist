@@ -83,7 +83,7 @@ function blankData() {
       groq:       { label: 'Groq (⚡ FASTEST)',format: 'openai',    baseUrl: 'https://api.groq.com/openai/v1/chat/completions', apiKey: '',
                     models: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3-32b'] },
       nim:        { label: 'NVIDIA NIM',       format: 'openai',    baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
-                    models: ['z-ai/glm-5-3', 'google/gemma-4-31b-it', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
+                    models: ['mistralai/mistral-large-4-1t-a52b', 'minimaxai/minimax-m3.1-flash', 'z-ai/glm-5-3','google/gemma-4-31b-it','meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mixtral-8x22b-instruct-v0.1'] },
       nim2:       { label: 'NVIDIA NIM (2nd key)', format: 'openai',  baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions', apiKey: '',
                     models: ['nvidia/nemotron-3.5-lightning-30b-a3b', 'deepseek-ai/deepseek-v4-flash-0731', 'meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct'] },
       openai:     { label: 'OpenAI (ChatGPT)', format: 'openai',    baseUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '',
@@ -113,7 +113,7 @@ function blankData() {
       fireworks:  { label: 'Fireworks AI',     format: 'openai',    baseUrl: 'https://api.fireworks.ai/inference/v1/chat/completions', apiKey: '',
                     models: ['accounts/fireworks/models/llama-v3p3-70b-instruct', 'accounts/fireworks/models/mixtral-8x22b-instruct'] },
       openrouter: { label: 'OpenRouter',       format: 'openai',    baseUrl: 'https://openrouter.ai/api/v1/chat/completions', apiKey: '',
-                    models: ['nvidia/nemotron-3-ultra-550b-a55b:free', 'cohere/north-mini-code:free', 'poolside/laguna-xs-2.1:free', 'apodex/apodex-1.1-mini:free', 'deepseek/deepseek-v4-flash-0731:free', 'inclusionai/ling-3.0-flash-sante:free', 'stealth/space-bunny-alpha', 'qwen/qwen3.8-27b:free'] },
+                    models: ['nvidia/nemotron-3-ultra-550b-a55b:free', 'cohere/north-mini-code:free', 'poolside/laguna-xs-2.1:free', 'apodex/apodex-1.1-mini:free', 'nvidia/nemotron-3.5-lightning:free', 'google/gemma-4-31b-it:free', 'stealth/space-bunny-alpha', 'qwen/qwen3.8-27b:free'] },
       vercel:     { label: 'Vercel AI',        format: 'openai',    baseUrl: 'https://api.vercel.ai/v1/chat/completions', apiKey: '',
                     models: ['claude-opus-4-8', 'claude-sonnet-4-6', 'gpt-4o', 'gpt-4o-mini'] },
       xplabs:     { label: 'Experiential Labs', format: 'openai',   baseUrl: 'https://api.experientiallabs.ai/v1/chat/completions', apiKey: '',
@@ -158,7 +158,6 @@ function blankData() {
           { provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' },
           { provider: 'groq', model: 'openai/gpt-oss-20b' },
           { provider: 'groq', model: 'openai/gpt-oss-120b' },
-          { provider: 'cerebras', model: 'gpt-oss-120b' },
           { provider: 'gemini', model: 'gemini-3.8-flash' },
           { provider: 'pollinations', model: 'openai' }
         ],
@@ -166,7 +165,6 @@ function blankData() {
           { provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' },
           { provider: 'nim2', model: 'nvidia/nemotron-3.5-lightning-30b-a3b' },
           { provider: 'groq', model: 'openai/gpt-oss-120b' },
-          { provider: 'cerebras', model: 'gpt-oss-120b' },
           { provider: 'gemini', model: 'gemini-3.8-flash' },
           { provider: 'pollinations', model: 'openai' }
         ],
@@ -185,7 +183,6 @@ function blankData() {
           { provider: 'cometapi', model: 'gemini-4-argon' },
           { provider: 'cometapi', model: 'claude-fable-5-1' },
           { provider: 'cometapi', model: 'claude-opus-5' },
-          { provider: 'cerebras', model: 'gpt-oss-120b' },
           { provider: 'gemini', model: 'gemini-3.8-flash' },
           { provider: 'pollinations', model: 'openai' }
         ],
@@ -197,20 +194,28 @@ function blankData() {
         // High and Ultra use task-based routing: the chain is picked by classifySonarTask() at request time.
         // The effortChains below are used as defaults when task routing doesn't apply (multimodal, etc.).
         effortChains: {
-          low:    [{ provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free' }],
+          // ling-3.0-flash-sante:free was removed from OpenRouter (404 "No endpoints found"), so Low now uses these.
+          low:    [
+            { provider: 'openrouter', model: 'nvidia/nemotron-3.5-lightning:free' },
+            { provider: 'openrouter', model: 'google/gemma-4-31b-it:free' }
+          ],
           medium: [
             { provider: 'openrouter', model: 'stealth/space-bunny-alpha' },
             { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free' }
           ],
           // High default (reasoning): Nemotron 3 Ultra (free) then Kimi K3 (NVIDIA removed it from NIM, so via Bluesminds)
+          // Mistral Large 4 (NVIDIA NIM free endpoint, 262K context) sits between Nemotron and Kimi: if the NIM trial
+          // endpoint 404s/403s or is rate limited, the chain simply moves on to Kimi.
           high: [
             { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
+            { provider: 'nim', model: 'mistralai/mistral-large-4-1t-a52b' },
             { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
           ],
-          // Ultra: Opus 5.5 (paid, skipped if no Cloudflare), then Nemotron 3 Ultra (free), then Kimi K3
+          // Ultra: Opus 5.5 (paid, skipped if no Cloudflare), then Nemotron 3 Ultra (free), Mistral Large 4, then Kimi K3
           ultra: [
             { provider: 'cfai', model: 'anthropic/claude-opus-5.5' },
             { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
+            { provider: 'nim', model: 'mistralai/mistral-large-4-1t-a52b' },
             { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
           ]
         },
@@ -219,23 +224,31 @@ function blankData() {
         taskChains: {
           reasoning: [
             { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
+            { provider: 'nim', model: 'mistralai/mistral-large-4-1t-a52b' },
             { provider: 'bluesminds', model: 'moonshotai/kimi-k3' }
           ],
+          // MiniMax M3.1 Flash (NVIDIA NIM free endpoint, coding/agentic MoE) is a fallback in the coding, debugging and
+          // tool-call chains: its coding quality isn't verified yet, so it isn't first choice anywhere.
           coding: [
             { provider: 'openrouter', model: 'cohere/north-mini-code:free' },
-            { provider: 'openrouter', model: 'poolside/laguna-xs-2.1:free' }
+            { provider: 'openrouter', model: 'poolside/laguna-xs-2.1:free' },
+            { provider: 'nim', model: 'minimaxai/minimax-m3.1-flash' }
           ],
           debugging: [
             { provider: 'openrouter', model: 'apodex/apodex-1.1-mini:free' },
-            { provider: 'openrouter', model: 'cohere/north-mini-code:free' }
+            { provider: 'openrouter', model: 'cohere/north-mini-code:free' },
+            { provider: 'nim', model: 'minimaxai/minimax-m3.1-flash' }
           ],
           toolcall: [
+            { provider: 'nim', model: 'mistralai/mistral-large-4-1t-a52b' },
+            { provider: 'nim', model: 'minimaxai/minimax-m3.1-flash' },
             { provider: 'nim', model: 'z-ai/glm-5-3' },
             { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' }
           ],
+          // OpenRouter dropped the free DeepSeek V4 Flash (404 "unavailable for free"; only the paid slug remains) and Ling.
           fast: [
-            { provider: 'openrouter', model: 'deepseek/deepseek-v4-flash-0731:free' },
-            { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free' }
+            { provider: 'openrouter', model: 'nvidia/nemotron-3.5-lightning:free' },
+            { provider: 'openrouter', model: 'google/gemma-4-31b-it:free' }
           ]
         },
         fallbacks: []
@@ -306,14 +319,35 @@ function reconcile(d) {
       }
     }
   };
+  // Dead entries seen in the Render logs: OpenRouter 404s (Ling, free DeepSeek V4 Flash) and Cerebras 402 (needs billing).
+  // Dropped from saved chains and the saved OpenRouter model list. Idempotent.
+  const DEAD = [
+    { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free' },
+    { provider: 'openrouter', model: 'deepseek/deepseek-v4-flash-0731:free' },
+    { provider: 'cerebras', model: 'gpt-oss-120b' }
+  ];
+  const dropDead = (chain) => {
+    if (!Array.isArray(chain)) return;
+    for (let i = chain.length - 1; i >= 0; i--) {
+      if (DEAD.some(d => d.provider === chain[i].provider && d.model === chain[i].model)) chain.splice(i, 1);
+    }
+  };
   if (merged.routing) {
     for (const asst of Object.values(merged.routing)) {
       if (!asst || typeof asst !== 'object') continue;
       for (const v of Object.values(asst)) {
-        if (Array.isArray(v)) swapNimKimi(v);
-        else if (v && typeof v === 'object') Object.values(v).forEach(swapNimKimi);
+        if (Array.isArray(v)) { swapNimKimi(v); dropDead(v); }
+        else if (v && typeof v === 'object') Object.values(v).forEach(c => { swapNimKimi(c); dropDead(c); });
       }
     }
+    // A chain emptied by the cleanup (Sonar Low and the "fast" task chain only had dead models) gets the new defaults.
+    const defRouting = blankData().routing.sonar;
+    const sn = merged.routing.sonar;
+    if (sn && sn.effortChains && Array.isArray(sn.effortChains.low) && !sn.effortChains.low.length) sn.effortChains.low = defRouting.effortChains.low;
+    if (sn && sn.taskChains && Array.isArray(sn.taskChains.fast) && !sn.taskChains.fast.length) sn.taskChains.fast = defRouting.taskChains.fast;
+  }
+  if (merged.providers && merged.providers.openrouter && Array.isArray(merged.providers.openrouter.models)) {
+    merged.providers.openrouter.models = merged.providers.openrouter.models.filter(m => !DEAD.some(d => d.provider === 'openrouter' && d.model === m));
   }
   // Same shallow-merge problem for Sonar's effort chains: saved routing predates them, so fill
   // them in only when absent (never overwrites chains you've edited in the console).
@@ -370,6 +404,24 @@ function reconcile(d) {
     if (!r.sonar.taskChains) {
       r.sonar.taskChains = blankData().routing.sonar.taskChains;
     }
+    // Mistral Large 4 on NVIDIA NIM (added 2026-11): insert into saved chains that lack it. It goes right before
+    // Kimi K3 when that's present (so it's tried after Nemotron), otherwise at the end; for tool calls it goes first.
+    const MISTRAL4 = { provider: 'nim', model: 'mistralai/mistral-large-4-1t-a52b' };
+    const addMistral4 = (chain, first) => {
+      if (!Array.isArray(chain) || chain.some(t => t.provider === 'nim' && t.model === MISTRAL4.model)) return;
+      if (first) { chain.unshift({ ...MISTRAL4 }); return; }
+      const k = chain.findIndex(t => t.model === 'moonshotai/kimi-k3');
+      if (k > -1) chain.splice(k, 0, { ...MISTRAL4 }); else chain.push({ ...MISTRAL4 });
+    };
+    if (r.sonar.effortChains) { addMistral4(r.sonar.effortChains.high); addMistral4(r.sonar.effortChains.ultra); }
+    if (r.sonar.taskChains) { addMistral4(r.sonar.taskChains.reasoning); addMistral4(r.sonar.taskChains.toolcall, true); }
+    // MiniMax M3.1 Flash on NIM (added 2026-11): appended to saved coding/debugging chains; second in tool calls.
+    const addMinimax = (chain, idx) => {
+      if (!Array.isArray(chain) || chain.some(t => t.provider === 'nim' && t.model === 'minimaxai/minimax-m3.1-flash')) return;
+      const entry = { provider: 'nim', model: 'minimaxai/minimax-m3.1-flash' };
+      if (typeof idx === 'number') chain.splice(Math.min(idx, chain.length), 0, entry); else chain.push(entry);
+    };
+    if (r.sonar.taskChains) { addMinimax(r.sonar.taskChains.coding); addMinimax(r.sonar.taskChains.debugging); addMinimax(r.sonar.taskChains.toolcall, 1); }
   }
   if (r.pluto) {
     addTop(r.pluto.casualChain, [{ provider: 'cfgateway', model: 'google-ai-studio/gemini-3.8-flash' }]);
